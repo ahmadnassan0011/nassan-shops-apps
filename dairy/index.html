@@ -1635,6 +1635,7 @@ tr.checked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary) inset}
             </h3>
             <p style="font-size:11.5px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
                 بعد نشر رابط الاستقبال (Google Apps Script)، الصقه هون مع الرمز السري ليتم إرسال كل إضافة/تعديل تلقائياً — العمل بدون إنترنت يبقى شغّالاً كالمعتاد وتتم المزامنة عند توفر الاتصال.
+                أول مرة بتفعّل المزامنة من جهاز جديد، لازم صاحب المتجر يوافق عليه من لوحة الأدمن قبل ما تبلش المزامنة الفعلية.
             </p>
             <div class="setting-row">
                 <label>رابط المزامنة (Web App URL)</label>
@@ -1988,6 +1989,8 @@ function persistSyncQueue(){
 }
 let syncQueue = loadSyncQueue();
 let syncInFlight = false;
+let deviceApprovalStatus = null; // null=لسا ما تحقق, 'pending'/'approved'/'rejected'
+let statusPollTimer = null;
 const SYNC_BATCH_SIZE = 15;
 
 function syncConfigured(){
@@ -2042,11 +2045,16 @@ async function flushSyncQueue(){
         });
         const json = await res.json();
         if(json && json.ok){
+            deviceApprovalStatus = "approved";
             batch.forEach(([id]) => delete syncQueue[id]);
             persistSyncQueue();
             try{ localStorage.setItem("jm-last-sync-at-dairy", String(Date.now())); }catch(e){}
             updateSyncStatusUI("success");
             if(Object.keys(syncQueue).length) debouncedFlushSync();
+        }else if(json && json.error === "pending_approval"){
+            deviceApprovalStatus = json.status || "pending";
+            updateSyncStatusUI();
+            if(deviceApprovalStatus === "pending") startStatusPolling();
         }else{
             updateSyncStatusUI("error", (json && json.error) || "خطأ غير معروف");
         }
@@ -2055,6 +2063,63 @@ async function flushSyncQueue(){
     }finally{
         syncInFlight = false;
     }
+}
+
+/* ============================================================
+   موافقة الأدمن على الجهاز — جهاز جديد بيصير "pending" تلقائياً،
+   وما بيقدر يزامن أي بيانات لحد ما صاحب المتجر يوافق عليه من
+   لوحة الأدمن (قسم "الأجهزة"). بنراقب حالته كل 20 ثانية لحد ما توافق.
+   ============================================================ */
+function stopStatusPolling(){
+    if(statusPollTimer){ clearInterval(statusPollTimer); statusPollTimer = null; }
+}
+function startStatusPolling(){
+    stopStatusPolling();
+    statusPollTimer = setInterval(checkDeviceStatus, 20000);
+}
+async function checkDeviceStatus(){
+    if(!syncConfigured()) return;
+    try{
+        const sep = shopProfile.syncUrl.includes("?") ? "&" : "?";
+        const url = shopProfile.syncUrl + sep + "action=status&token=" + encodeURIComponent(shopProfile.syncToken) + "&shopId=" + encodeURIComponent(shopProfile.shopId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){
+            const wasApproved = deviceApprovalStatus === "approved";
+            deviceApprovalStatus = json.status;
+            updateSyncStatusUI();
+            if(json.status === "approved"){
+                stopStatusPolling();
+                if(!wasApproved && Object.keys(syncQueue).length) flushSyncQueue();
+            }
+        }
+    }catch(e){ /* رح تعاد المحاولة بالدورة الجاية */ }
+}
+function registerDeviceAndCheckStatus(){
+    if(!syncConfigured()) return;
+    fetch(shopProfile.syncUrl, {
+        method: "POST",
+        headers: {"Content-Type": "text/plain;charset=utf-8"},
+        body: JSON.stringify({
+            token: shopProfile.syncToken,
+            shopId: shopProfile.shopId,
+            shopName: shopProfile.shopName,
+            businessType: shopProfile.businessType,
+            ops: []
+        })
+    }).then(res => res.json()).then(json => {
+        if(json && json.ok){
+            deviceApprovalStatus = "approved";
+            updateSyncStatusUI();
+            flushSyncQueue();
+        }else if(json && json.error === "pending_approval"){
+            deviceApprovalStatus = json.status || "pending";
+            updateSyncStatusUI();
+            if(deviceApprovalStatus === "pending") startStatusPolling();
+        }else{
+            updateSyncStatusUI("error", (json && json.error) || "خطأ غير معروف");
+        }
+    }).catch(() => updateSyncStatusUI("error", "تعذّر الاتصال بالخادم"));
 }
 const debouncedFlushSync = debounce(flushSyncQueue, 2500);
 
@@ -2081,6 +2146,20 @@ function updateSyncStatusUI(state, message){
     if(!syncConfigured()){
         text.textContent = "المزامنة غير مفعّلة";
         btn.title = "افتح الإعدادات لتفعيل المزامنة السحابية";
+        return;
+    }
+    if(deviceApprovalStatus === "pending"){
+        text.textContent = pending ? `بانتظار موافقة الإدارة (${pending})` : "بانتظار موافقة الإدارة";
+        btn.title = "لازم صاحب المتجر يوافق على هالجهاز من لوحة الأدمن (قسم الأجهزة) قبل ما تبلش المزامنة";
+        const lastAtEl0 = document.getElementById("syncLastAtText");
+        if(lastAtEl0) lastAtEl0.textContent = "بانتظار موافقة صاحب المتجر على هذا الجهاز";
+        return;
+    }
+    if(deviceApprovalStatus === "rejected"){
+        text.textContent = "تم رفض هذا الجهاز";
+        btn.title = "تواصل مع صاحب المتجر لمعرفة السبب";
+        const lastAtEl0 = document.getElementById("syncLastAtText");
+        if(lastAtEl0) lastAtEl0.textContent = "تم رفض هذا الجهاز من قبل الإدارة";
         return;
     }
     if(state === "offline"){
@@ -2120,9 +2199,10 @@ function saveSyncSettingsAndFlush(){
     shopProfile.syncUrl = document.getElementById("syncUrlSetting").value.trim();
     shopProfile.syncToken = document.getElementById("syncTokenSetting").value.trim();
     saveShopProfile();
+    deviceApprovalStatus = null;
     updateSyncStatusUI();
     showMessage("تم حفظ إعدادات المزامنة");
-    flushSyncQueue();
+    registerDeviceAndCheckStatus();
 }
 function syncAllProductsNow(){
     if(!products.length){ showMessage("لا توجد مواد لمزامنتها", "warn"); return; }
@@ -3722,7 +3802,10 @@ renderExtraTableHead();
 renderTable();
 renderGallery();
 updateSyncStatusUI();
-if(navigator.onLine) flushSyncQueue();
+if(navigator.onLine){
+    if(syncConfigured()) checkDeviceStatus();
+    flushSyncQueue();
+}
 if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
         navigator.serviceWorker.register('sw.js').catch(function(){});
