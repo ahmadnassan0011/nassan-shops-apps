@@ -1941,7 +1941,9 @@ function ensureShopProfile(){
 }
 function saveShopSetup(fromWelcome){
     const nameId = fromWelcome ? "shopNameInput" : "shopNameSetting";
-    shopProfile.shopName = document.getElementById(nameId).value.trim() || "المتجر";
+    const newName = document.getElementById(nameId).value.trim() || "المتجر";
+    const nameChanged = !!shopProfile.shopName && shopProfile.shopName !== newName;
+    shopProfile.shopName = newName;
     shopProfile.businessType = FIXED_BUSINESS_TYPE;
     saveShopProfile();
     document.getElementById("shopNameSetting").value = shopProfile.shopName;
@@ -1950,7 +1952,12 @@ function saveShopSetup(fromWelcome){
     document.getElementById("businessTypeSelect").value = shopProfile.businessType;
     applyBusinessType();
     if(fromWelcome) closeModal("shopSetupPopup");
-    showMessage("تم حفظ إعدادات المتجر");
+    if(nameChanged && syncConfigured()){
+        showMessage("تم تغيير الاسم — بانتظار إعادة موافقة الإدارة", "warn");
+        registerDeviceAndCheckStatus();
+    }else{
+        showMessage("تم حفظ إعدادات المتجر");
+    }
 }
 
 function renderExtraFieldsForm(){
@@ -2126,8 +2133,36 @@ const debouncedFlushSync = debounce(flushSyncQueue, 2500);
 window.addEventListener("online", flushSyncQueue);
 window.addEventListener("offline", () => updateSyncStatusUI("offline"));
 setInterval(() => {
-    if(navigator.onLine && Object.keys(syncQueue).length) flushSyncQueue();
+    if(!navigator.onLine) return;
+    if(Object.keys(syncQueue).length) flushSyncQueue();
+    reconcileWithServer();
 }, 60000);
+
+/* ============================================================
+   مطابقة مع الخادم — بتكتشف المواد يلي انحذفت من لوحة الأدمن
+   (زر "🗑 حذف محل") وبتمسحها محلياً هي كمان، حتى لو المزامنة
+   الطبيعية اتجاه واحد بس (من المتجر للشيت).
+   ============================================================ */
+async function reconcileWithServer(){
+    if(!syncConfigured() || deviceApprovalStatus === "pending" || deviceApprovalStatus === "rejected") return;
+    if(!navigator.onLine) return;
+    try{
+        const sep = shopProfile.syncUrl.includes("?") ? "&" : "?";
+        const url = shopProfile.syncUrl + sep + "action=myProductIds&token=" + encodeURIComponent(shopProfile.syncToken) + "&shopId=" + encodeURIComponent(shopProfile.shopId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(!json || !json.ok || !Array.isArray(json.ids)) return;
+        const serverIds = new Set(json.ids);
+        const before = products.length;
+        products = products.filter(p => serverIds.has(p.id) || syncQueue[p.id]);
+        if(products.length !== before){
+            saveProducts();
+            renderTable();
+            renderGallery();
+            showMessage("تم تحديث القائمة حسب آخر تغييرات الإدارة", "warn");
+        }
+    }catch(e){ /* تجاهل — رح تعاد المحاولة بالدورة الجاية */ }
+}
 
 function formatLastSyncAt(){
     let raw = null;
@@ -3803,7 +3838,7 @@ renderTable();
 renderGallery();
 updateSyncStatusUI();
 if(navigator.onLine){
-    if(syncConfigured()) checkDeviceStatus();
+    if(syncConfigured()){ checkDeviceStatus(); reconcileWithServer(); }
     flushSyncQueue();
 }
 if('serviceWorker' in navigator){

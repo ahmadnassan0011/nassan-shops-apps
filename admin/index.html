@@ -245,6 +245,8 @@ tbody tr:hover td{background:var(--primary-softer)}
         <div class="title-actions">
             <button class="pill-btn" onclick="refreshData(true)" type="button">↻ تحديث</button>
             <button class="pill-btn" onclick="openDevicesModal()" type="button">📱 الأجهزة<span class="pill-badge" id="pendingBadge" style="display:none">0</span></button>
+            <button class="pill-btn" onclick="openAdminDevicesModal()" type="button">🔐 أجهزة الأدمن<span class="pill-badge" id="pendingAdminBadge" style="display:none">0</span></button>
+            <button class="pill-btn" id="deleteShopBtn" onclick="openDeleteShopModal()" type="button" style="display:none;background:var(--danger-soft);color:var(--danger)">🗑 حذف محل</button>
             <button class="pill-btn" onclick="openConfigModal()" type="button">⚙ الإعدادات</button>
         </div>
     </header>
@@ -283,13 +285,14 @@ tbody tr:hover td{background:var(--primary-softer)}
         </table>
     </div>
 
-    <p class="footer-note">لوحة للقراءة فقط — التعديل والحذف يتم من تطبيق كل محل</p>
+    <p class="footer-note">لوحة للقراءة فقط للمواد — التعديل من تطبيق كل محل، والحذف الجماعي لمحل كامل من "🗑 حذف محل" (سطح المكتب فقط)</p>
 </div>
 
 <div class="modal-overlay" id="configModal">
     <div class="modal-content">
         <h2>إعدادات الاتصال</h2>
-        <p>نفس رابط المزامنة (Web App URL) ونفس الرمز السري المستخدم بتطبيقات المحلات — من نشرت عليه Code.gs.</p>
+        <p>نفس رابط المزامنة (Web App URL) ونفس الرمز السري المستخدم بتطبيقات المحلات — من نشرت عليه Code.gs.
+        أول جهاز يفتح هالإعدادات (عادةً سطح المكتب) بيصير معتمد تلقائياً؛ أي جهاز أدمن بعده (موبايل مثلاً) لازم جهاز معتمد يوافق عليه.</p>
         <div class="field-row">
             <label>رابط المزامنة</label>
             <input type="text" id="apiUrlInput" placeholder="https://script.google.com/macros/...">
@@ -308,6 +311,32 @@ tbody tr:hover td{background:var(--primary-softer)}
         <p>أي جهاز موظف بيفتح المزامنة أول مرة بيصير هون بحالة "بانتظار الموافقة" — وافق عليه أو ارفضه قبل ما يقدر يزامن بياناته.</p>
         <div id="devicesList"></div>
         <button class="btn block" onclick="closeDevicesModal()" type="button" style="margin-top:6px">إغلاق</button>
+    </div>
+</div>
+
+<div class="modal-overlay devices-modal" id="adminDevicesModal">
+    <div class="modal-content">
+        <h2>🔐 أجهزة الأدمن</h2>
+        <p>أي جهاز جديد يفتح لوحة الأدمن (موبايل مثلاً) بيصير هون بحالة "بانتظار الموافقة" ومش قادر يشوف ولا بيانات لحد ما توافق عليه من جهاز معتمد أصلاً.</p>
+        <div id="adminDevicesList"></div>
+        <button class="btn block" onclick="closeAdminDevicesModal()" type="button" style="margin-top:6px">إغلاق</button>
+    </div>
+</div>
+
+<div class="modal-overlay devices-modal" id="deleteShopModal">
+    <div class="modal-content">
+        <h2>🗑 حذف بيانات محل</h2>
+        <p>بيحذف كل مواد المحل المحدد نهائياً من غوغل شيت (والصور من Drive) — وبتختفي تلقائياً من تطبيق الموظف ولوحة الأدمن. ما فيه تراجع بعد الحذف.</p>
+        <div id="deleteShopList"></div>
+        <button class="btn block" onclick="closeDeleteShopModal()" type="button" style="margin-top:6px">إغلاق</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="adminPendingScreen" style="z-index:5000">
+    <div class="modal-content" style="text-align:center">
+        <div style="font-size:38px;margin-bottom:8px">🔐</div>
+        <h2 id="adminPendingTitle">بانتظار موافقة الإدارة</h2>
+        <p id="adminPendingText">هالجهاز لسا مش معتمد لعرض بيانات المحلات. افتح لوحة الأدمن من جهاز معتمد أصلاً (سطح المكتب عادةً) ← "🔐 أجهزة الأدمن" ووافق عليه — رح تنفتح هون تلقائياً أول ما توافق.</p>
     </div>
 </div>
 
@@ -332,6 +361,26 @@ const EXTRA_KEY_LABELS = { expiry: "الصلاحية", color: "اللون", size
 
 let allProducts = [];
 let allShops = [];
+let allAdminDevices = [];
+let adminPendingPollTimer = null;
+
+/* معرّف ثابت لهالمتصفح/الجهاز — بيتولّد مرة وحدة ويضل نفسه */
+function getAdminDeviceId_(){
+    try{
+        let id = localStorage.getItem("jm-admin-device-id");
+        if(!id){
+            id = "adm-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+            localStorage.setItem("jm-admin-device-id", id);
+        }
+        return id;
+    }catch(e){ return "adm-" + Date.now(); }
+}
+function getAdminDeviceLabel_(){
+    if(typeof IS_DESKTOP_SERVER !== "undefined" && IS_DESKTOP_SERVER) return "سطح المكتب";
+    const ua = navigator.userAgent || "";
+    const platform = /Android/i.test(ua) ? "أندرويد" : /iPhone|iPad/i.test(ua) ? "آيفون/آيباد" : "متصفح";
+    return "موبايل — " + platform;
+}
 
 function esc(text){
     return String(text == null ? "" : text)
@@ -431,6 +480,89 @@ function saveConfig(){
     refreshData(true);
 }
 
+/* ============================================================
+   أجهزة الأدمن — أي جهاز جديد يفتح لوحة الأدمن (موبايل مثلاً)
+   بيصير "بانتظار الموافقة" لحد ما جهاز أدمن معتمد أصلاً يوافق عليه.
+   ============================================================ */
+function showAdminPendingScreen_(status){
+    const title = document.getElementById("adminPendingTitle");
+    const text = document.getElementById("adminPendingText");
+    if(status === "rejected"){
+        title.textContent = "تم رفض هذا الجهاز";
+        text.textContent = "تواصل مع صاحب المتجر لمعرفة السبب.";
+    }else{
+        title.textContent = "بانتظار موافقة الإدارة";
+        text.textContent = "هالجهاز لسا مش معتمد لعرض بيانات المحلات. افتح لوحة الأدمن من جهاز معتمد أصلاً (سطح المكتب عادةً) ← \"🔐 أجهزة الأدمن\" ووافق عليه — رح تنفتح هون تلقائياً أول ما توافق.";
+    }
+    document.getElementById("adminPendingScreen").classList.add("open");
+    if(status === "pending" && !adminPendingPollTimer){
+        adminPendingPollTimer = setInterval(() => refreshData(false), 15000);
+    }
+}
+function hideAdminPendingScreen_(){
+    document.getElementById("adminPendingScreen").classList.remove("open");
+    if(adminPendingPollTimer){ clearInterval(adminPendingPollTimer); adminPendingPollTimer = null; }
+}
+function updatePendingAdminBadge(){
+    const count = allAdminDevices.filter(d => d.status === "pending").length;
+    const badge = document.getElementById("pendingAdminBadge");
+    if(!badge) return;
+    if(count > 0){ badge.textContent = count; badge.style.display = "flex"; }
+    else{ badge.style.display = "none"; }
+}
+function openAdminDevicesModal(){
+    renderAdminDevicesModal();
+    document.getElementById("adminDevicesModal").classList.add("open");
+}
+function closeAdminDevicesModal(){ document.getElementById("adminDevicesModal").classList.remove("open"); }
+function renderAdminDevicesModal(){
+    const box = document.getElementById("adminDevicesList");
+    if(!allAdminDevices.length){
+        box.innerHTML = '<div class="devices-empty">ولا جهاز أدمن اتصل بعد</div>';
+        return;
+    }
+    const order = {pending: 0, rejected: 1, approved: 2};
+    const sorted = allAdminDevices.slice().sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2));
+    const statusLabel = {pending: "بانتظار الموافقة", approved: "معتمد", rejected: "مرفوض"};
+    const myId = getAdminDeviceId_();
+    box.innerHTML = sorted.map(d => {
+        const lastSeen = d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString("ar") : "—";
+        const status = d.status || "pending";
+        const isMe = d.deviceId === myId;
+        const actions = status === "approved"
+            ? (isMe ? "" : `<button class="reject" title="رفض / إلغاء" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>`)
+            : `<button class="approve" title="قبول" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','approved')" type="button">✓</button>
+               <button class="reject" title="رفض" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>`;
+        return `<div class="device-row">
+            <div class="info">
+                <strong>${esc(d.deviceLabel || "بدون اسم")}${isMe ? " (هالجهاز)" : ""}</strong>
+                <small>${esc(lastSeen)}</small>
+            </div>
+            <span class="device-status ${status}">${statusLabel[status] || status}</span>
+            <div class="device-actions">${actions}</div>
+        </div>`;
+    }).join("");
+}
+async function setAdminDeviceStatus(deviceId, status){
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=setAdminDeviceStatus&token=" + encodeURIComponent(config.apiToken)
+            + "&deviceId=" + encodeURIComponent(deviceId) + "&status=" + encodeURIComponent(status);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){
+            showToast(status === "approved" ? "تم قبول الجهاز ✓" : "تم رفض الجهاز");
+            await refreshData();
+            renderAdminDevicesModal();
+        }else{
+            showToast("تعذّر تنفيذ العملية", true);
+        }
+    }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
+}
+
+const IS_DESKTOP_SERVER = (location.hostname === "localhost" || location.hostname === "127.0.0.1");
+
 async function refreshData(manual){
     if(!config || !config.apiUrl || !config.apiToken){
         openConfigModal();
@@ -439,19 +571,33 @@ async function refreshData(manual){
     if(manual) showToast("جارِ التحديث...");
     try{
         const sep = config.apiUrl.includes("?") ? "&" : "?";
-        const url = config.apiUrl + sep + "action=list&token=" + encodeURIComponent(config.apiToken);
+        const url = config.apiUrl + sep + "action=list&token=" + encodeURIComponent(config.apiToken)
+            + "&adminDeviceId=" + encodeURIComponent(getAdminDeviceId_())
+            + "&adminLabel=" + encodeURIComponent(getAdminDeviceLabel_());
         const res = await fetch(url);
         const json = await res.json();
+        if(json && json.error === "pending_approval"){
+            showAdminPendingScreen_(json.status);
+            return;
+        }
         if(!json || !json.ok) throw new Error((json && json.error) || "استجابة غير صالحة");
+        hideAdminPendingScreen_();
         allProducts = json.products || [];
         allShops = json.shops || [];
+        allAdminDevices = json.adminDevices || [];
         document.getElementById("offlineBanner").style.display = "none";
         populateFilters();
         renderStats();
         updatePendingBadge();
+        updatePendingAdminBadge();
         renderTable(); // عرض فوري (روابط Drive الأصلية) — قبل ما ننزّل الصور محلياً
+
+        // نسخة احتياطية بلا إنترنت (بروابط Drive الأصلية — قبل ما تتبدّل لمسارات محلية تحت)
+        saveSnapshotToIDB();
+        if(!IS_DESKTOP_SERVER) cacheImagesInBackground();
+
         if(manual) showToast("تم التحديث — جارِ تنزيل الصور محلياً...");
-        await syncImagesLocally(); // بينزّل الصور الجديدة/المتغيّرة بس، ويبدّل الروابط بمسارات محلية
+        await syncImagesLocally(); // (نسخة سطح المكتب فقط) بينزّل الصور الجديدة/المتغيّرة، ويبدّل الروابط بمسارات محلية
     }catch(err){
         const loaded = await loadLocalBackup();
         if(loaded){
@@ -491,22 +637,149 @@ async function syncImagesLocally(){
 }
 
 async function loadLocalBackup(){
+    // 1) نسخة سطح المكتب: جرب السيرفر المحلي أولاً (صور محفوظة كملفات فعلية)
+    if(IS_DESKTOP_SERVER){
+        try{
+            const res = await fetch("/admin-load", {cache:"no-store"});
+            const json = await res.json();
+            if(json && Array.isArray(json.products) && json.products.length){
+                allProducts = json.products;
+                allShops = json.shops || [];
+                showOfflineBanner_(json.lastSyncAt);
+                return true;
+            }
+        }catch(e){ /* السيرفر المحلي مش شغّال — جرب IndexedDB تحت */ }
+    }
+
+    // 2) نسخة الموبايل (وأي متصفح بدون سيرفر محلي): من IndexedDB
     try{
-        const res = await fetch("/admin-load", {cache:"no-store"});
-        const json = await res.json();
-        if(!json || !Array.isArray(json.products) || !json.products.length) return false;
-        allProducts = json.products;
-        allShops = json.shops || [];
-        const lastText = json.lastSyncAt ? new Date(json.lastSyncAt).toLocaleString("ar") : "غير معروف";
-        document.getElementById("offlineBanner").textContent =
-            "⚠ غير متصل بغوغل شيت — البيانات الظاهرة من آخر نسخة محفوظة محلياً (" + lastText + ")";
-        document.getElementById("offlineBanner").style.display = "block";
-        populateFilters();
-        renderStats();
-        updatePendingBadge();
-        renderTable();
+        const snap = await loadSnapshotFromIDB();
+        if(!snap || !Array.isArray(snap.products) || !snap.products.length) return false;
+        allProducts = await hydrateProductsWithCachedImages_(snap.products);
+        allShops = snap.shops || [];
+        showOfflineBanner_(snap.lastSyncAt);
         return true;
     }catch(e){ return false; }
+}
+function showOfflineBanner_(lastSyncAt){
+    const lastText = lastSyncAt ? new Date(lastSyncAt).toLocaleString("ar") : "غير معروف";
+    document.getElementById("offlineBanner").textContent =
+        "⚠ غير متصل بغوغل شيت — البيانات الظاهرة من آخر نسخة محفوظة محلياً (" + lastText + ")";
+    document.getElementById("offlineBanner").style.display = "block";
+    populateFilters();
+    renderStats();
+    updatePendingBadge();
+    renderTable();
+}
+
+/* ============================================================
+   نسخة احتياطية بلا إنترنت لنسخة الموبايل (IndexedDB) — بتخزّن
+   آخر لائحة مواد + صور المنتجات كـ Blob محلياً بالمتصفح، عشان
+   تنعرض حتى لو مافي نت. الصور بتنجلب عبر Apps Script نفسه
+   (action=image) لأنه روابط drive.google.com المباشرة محجوبة
+   بـ CORS من متصفح الموبايل.
+   ============================================================ */
+const IDB_NAME = "jm-admin-offline";
+function openIDB_(){
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if(!db.objectStoreNames.contains("snapshot")) db.createObjectStore("snapshot");
+            if(!db.objectStoreNames.contains("images")) db.createObjectStore("images", {keyPath:"fileId"});
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+async function saveSnapshotToIDB(){
+    try{
+        const db = await openIDB_();
+        const tx = db.transaction("snapshot", "readwrite");
+        tx.objectStore("snapshot").put({products: allProducts, shops: allShops, lastSyncAt: Date.now()}, "data");
+    }catch(e){ /* فشل الحفظ المحلي ما لازم يوقف عرض البيانات الحية */ }
+}
+async function loadSnapshotFromIDB(){
+    try{
+        const db = await openIDB_();
+        const tx = db.transaction("snapshot", "readonly");
+        const req = tx.objectStore("snapshot").get("data");
+        return await new Promise((resolve) => {
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => resolve(null);
+        });
+    }catch(e){ return null; }
+}
+function driveFileId_(url){
+    const m = /[?&]id=([^&]+)/.exec(url || "");
+    return m ? m[1] : null;
+}
+async function getCachedImageBlob_(fileId){
+    try{
+        const db = await openIDB_();
+        const tx = db.transaction("images", "readonly");
+        const req = tx.objectStore("images").get(fileId);
+        return await new Promise((resolve) => {
+            req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+            req.onerror = () => resolve(null);
+        });
+    }catch(e){ return null; }
+}
+async function cacheImageBlob_(fileId, blob){
+    try{
+        const db = await openIDB_();
+        const tx = db.transaction("images", "readwrite");
+        tx.objectStore("images").put({fileId, blob, cachedAt: Date.now()});
+    }catch(e){}
+}
+async function fetchAndCacheImage_(fileId){
+    const existing = await getCachedImageBlob_(fileId);
+    if(existing) return existing;
+    if(!config || !config.apiUrl || !config.apiToken) return null;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=image&token=" + encodeURIComponent(config.apiToken) + "&fileId=" + encodeURIComponent(fileId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(!json || !json.ok || !json.base64) return null;
+        const byteChars = atob(json.base64);
+        const bytes = new Uint8Array(byteChars.length);
+        for(let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+        const blob = new Blob([bytes], {type: json.mimeType || "image/jpeg"});
+        cacheImageBlob_(fileId, blob);
+        return blob;
+    }catch(e){ return null; }
+}
+/* بتنزّل صور المنتجات بالخلفية (بلا ما توقف الواجهة) — أول مرة بتاخد وقت
+   حسب عدد الصور، والمرات الجاية بتكون أسرع بكثير (بس الجديد/المتغيّر). */
+async function cacheImagesInBackground(){
+    const ids = new Set();
+    allProducts.forEach(p => {
+        const urls = (Array.isArray(p.imageUrls) && p.imageUrls.length) ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []);
+        urls.forEach(u => { const id = driveFileId_(u); if(id) ids.add(id); });
+    });
+    const list = Array.from(ids);
+    let idx = 0;
+    async function worker(){
+        while(idx < list.length){
+            await fetchAndCacheImage_(list[idx++]);
+        }
+    }
+    await Promise.all([worker(), worker(), worker()]); // 3 تنزيلات بالتوازي
+}
+async function hydrateProductsWithCachedImages_(products){
+    const out = [];
+    for(const p of products){
+        const urls = (Array.isArray(p.imageUrls) && p.imageUrls.length) ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []);
+        const newUrls = [];
+        for(const u of urls){
+            const fileId = driveFileId_(u);
+            const blob = fileId ? await getCachedImageBlob_(fileId) : null;
+            newUrls.push(blob ? URL.createObjectURL(blob) : u);
+        }
+        out.push(Object.assign({}, p, {imageUrls: newUrls, imageUrl: newUrls[0] || p.imageUrl}));
+    }
+    return out;
 }
 
 function populateFilters(){
@@ -640,10 +913,66 @@ document.addEventListener("keydown", (e) => {
     else if(e.key === "ArrowLeft") lightboxNav(1);
 });
 
+/* ============================================================
+   حذف بيانات محل — سطح المكتب فقط (زر مخفي على نسخة الموبايل)
+   ============================================================ */
+function openDeleteShopModal(){
+    renderDeleteShopModal();
+    document.getElementById("deleteShopModal").classList.add("open");
+}
+function closeDeleteShopModal(){ document.getElementById("deleteShopModal").classList.remove("open"); }
+function renderDeleteShopModal(){
+    const box = document.getElementById("deleteShopList");
+    const counts = {};
+    allProducts.forEach(p => { counts[p.shopId] = (counts[p.shopId] || 0) + 1; });
+    const shopsById = {};
+    allShops.forEach(s => { shopsById[s.shopId] = s; });
+    allProducts.forEach(p => { if(!shopsById[p.shopId]) shopsById[p.shopId] = {shopId:p.shopId, shopName:p.shopName, businessType:p.businessType}; });
+    const ids = Object.keys(counts);
+    if(!ids.length){
+        box.innerHTML = '<div class="devices-empty">ولا مادة موجودة بعد</div>';
+        return;
+    }
+    box.innerHTML = ids.map(id => {
+        const s = shopsById[id] || {};
+        const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
+        return `<div class="device-row">
+            <div class="info">
+                <strong>${esc(s.shopName || id)} — ${esc(typeLabel)}</strong>
+                <small>${counts[id]} مادة</small>
+            </div>
+            <div class="device-actions">
+                <button class="reject" title="حذف كل مواد هالمحل" onclick="confirmDeleteShop('${esc(id)}','${esc((s.shopName || id).replace(/'/g,"\\'"))}',${counts[id]})" type="button">🗑</button>
+            </div>
+        </div>`;
+    }).join("");
+}
+async function confirmDeleteShop(shopId, shopName, count){
+    if(!confirm(`⚠️ سيتم حذف كل مواد "${shopName}" (${count} مادة) نهائياً من غوغل شيت والصور من Drive.\nبتختفي تلقائياً من تطبيق الموظف ولوحة الأدمن. لا يمكن التراجع.\n\nهل أنت متأكد؟`)) return;
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=deleteShopProducts&token=" + encodeURIComponent(config.apiToken) + "&shopId=" + encodeURIComponent(shopId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){
+            showToast(`تم حذف ${json.deleted} مادة من "${shopName}" ✓`);
+            await refreshData();
+            renderDeleteShopModal();
+        }else{
+            showToast("تعذّر تنفيذ الحذف", true);
+        }
+    }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
+}
+
 if(config && config.apiUrl && config.apiToken){
     refreshData();
 }else{
     openConfigModal();
+}
+if(IS_DESKTOP_SERVER){
+    const delBtn = document.getElementById("deleteShopBtn");
+    if(delBtn) delBtn.style.display = "";
 }
 setInterval(() => { if(config && config.apiUrl) refreshData(); }, 60000);
 if('serviceWorker' in navigator){
