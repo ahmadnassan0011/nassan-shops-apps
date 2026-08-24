@@ -1197,11 +1197,29 @@ async function confirmDeleteSelectedProducts(){
     }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
 }
 
-if(config && config.apiUrl && config.apiToken){
+/* فتح فوري: نعرض آخر نسخة محفوظة محلياً مباشرة (بدون ما نستنى
+   الشبكة)، وبنفس الوقت منبلش تحديث حقيقي من غوغل شيت بالخلفية —
+   هيك الفتح بيصير سريع دايماً حتى لو النت بطيء أو الخادم مشغول. */
+async function initialLoad(){
+    if(!config || !config.apiUrl || !config.apiToken){
+        openConfigModal();
+        return;
+    }
+    try{
+        const snap = await loadSnapshotFromIDB();
+        if(snap && Array.isArray(snap.products) && snap.products.length){
+            allProducts = await hydrateProductsWithCachedImages_(snap.products);
+            allShops = snap.shops || [];
+            populateFilters();
+            renderStats();
+            renderShopsRow();
+            updatePendingBadge();
+            renderTable();
+        }
+    }catch(e){ /* ما في نسخة محفوظة بعد — عادي، بننتظر التحديث العادي */ }
     refreshData();
-}else{
-    openConfigModal();
 }
+initialLoad();
 if(IS_DESKTOP_SERVER){
     const delBtn = document.getElementById("deleteShopBtn");
     if(delBtn) delBtn.style.display = "";
