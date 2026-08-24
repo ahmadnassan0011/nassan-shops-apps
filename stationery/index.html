@@ -3844,7 +3844,7 @@ if(navigator.onLine){
 }
 if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
-        navigator.serviceWorker.register('sw.js').catch(function(){});
+        navigator.serviceWorker.register('sw.js').catch(function(err){ console.error('SW register failed', err); });
     });
 }
 </script>

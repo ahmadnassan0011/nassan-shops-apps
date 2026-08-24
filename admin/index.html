@@ -197,28 +197,28 @@ tbody tr:hover td{background:var(--primary-softer)}
 }
 .devices-empty{text-align:center;padding:24px;color:var(--text-muted);font-size:12.5px}
 
-/* شرائط المحلات النشطة — أعلى الصفحة */
-.shops-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
-.shop-chip{
-    display:inline-flex;align-items:center;gap:7px;
-    background:var(--surface);border:1px solid var(--border);border-radius:12px;
-    padding:8px 12px;font-size:12.5px;font-weight:700;color:var(--text);
-    box-shadow:var(--shadow-sm);
-}
-.shop-chip small{color:var(--text-muted);font-weight:600;margin-inline-start:2px}
-.shop-chip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.shop-chip .dot.online{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
-.shop-chip .dot.recent{background:#eab308}
-.shop-chip .dot.offline{background:var(--text-muted)}
-.shop-chip .dot.pending{background:var(--warning)}
-.shop-chip .dot.rejected{background:var(--danger)}
+/* صفحة حالة النشاط — نقاط الحالة (نفس الألوان بكل مكان بتنعرض فيه) */
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+.dot.online{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
+.dot.recent{background:#eab308}
+.dot.offline{background:var(--text-muted)}
+.dot.pending{background:var(--warning)}
+.dot.rejected{background:var(--danger)}
 .shops-legend{
     display:flex;flex-wrap:wrap;gap:12px;
-    margin:-6px 0 14px 0;padding:0 2px;
+    margin:0 0 14px 0;padding:0 2px;
     font-size:11px;color:var(--text-muted);
 }
 .shops-legend span{display:inline-flex;align-items:center;gap:5px}
-.shops-legend .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.shops-legend .dot{width:7px;height:7px;border-radius:50%}
+.status-cell{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px;white-space:nowrap}
+
+/* صفحة حالة النشاط — عرض كامل الشاشة بدل نافذة صغيرة، وبقلبها جدول */
+.activity-page .modal-content{max-width:920px;width:96%;max-height:92vh;overflow:auto}
+.activity-page-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.activity-page-header h2{font-size:17px}
+.activity-section-title{font-size:13.5px;color:var(--text-soft);margin:16px 0 8px}
+.activity-section-title:first-of-type{margin-top:4px}
 
 /* منتقي مواد المحل — تحديد وحذف جزئي أو كلي */
 .picker-toolbar{
@@ -290,6 +290,7 @@ tbody tr:hover td{background:var(--primary-softer)}
         </div>
         <div class="title-actions">
             <button class="pill-btn" onclick="refreshData(true)" type="button">↻ تحديث</button>
+            <button class="pill-btn" onclick="openActivityPage()" type="button">📶 حالة النشاط</button>
             <button class="pill-btn" onclick="openDevicesModal()" type="button">📱 الأجهزة<span class="pill-badge" id="pendingBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openAdminDevicesModal()" type="button">🔐 أجهزة الأدمن<span class="pill-badge" id="pendingAdminBadge" style="display:none">0</span></button>
             <button class="pill-btn" id="deleteShopBtn" onclick="openDeleteShopModal()" type="button" style="display:none;background:var(--danger-soft);color:var(--danger)">🗑 حذف محل</button>
@@ -300,9 +301,6 @@ tbody tr:hover td{background:var(--primary-softer)}
     <div class="offline-banner" id="offlineBanner" style="display:none"></div>
 
     <div class="stats-row" id="statsRow"></div>
-
-    <div class="shops-row" id="shopsRow"></div>
-    <div class="shops-legend" id="shopsLegend"></div>
 
     <div class="toolbar">
         <input type="text" id="searchInput" placeholder="ابحث بالاسم أو الشركة أو الباركود..." oninput="renderTable()">
@@ -369,6 +367,34 @@ tbody tr:hover td{background:var(--primary-softer)}
         <p>أي جهاز جديد يفتح لوحة الأدمن (موبايل مثلاً) بيصير هون بحالة "بانتظار الموافقة" ومش قادر يشوف ولا بيانات لحد ما توافق عليه من جهاز معتمد أصلاً.</p>
         <div id="adminDevicesList"></div>
         <button class="btn block" onclick="closeAdminDevicesModal()" type="button" style="margin-top:6px">إغلاق</button>
+    </div>
+</div>
+
+<div class="modal-overlay activity-page" id="activityPage">
+    <div class="modal-content activity-page-content">
+        <div class="activity-page-header">
+            <h2>📶 حالة النشاط</h2>
+            <button class="btn" onclick="closeActivityPage()" type="button">إغلاق ✕</button>
+        </div>
+        <div class="shops-legend" id="shopsLegend"></div>
+        <h3 class="activity-section-title">المحلات</h3>
+        <div class="table-box">
+            <table>
+                <thead>
+                    <tr><th>المحل</th><th>النوع</th><th>الحالة</th><th>آخر ظهور</th></tr>
+                </thead>
+                <tbody id="shopsActivityBody"></tbody>
+            </table>
+        </div>
+        <h3 class="activity-section-title">أجهزة الأدمن</h3>
+        <div class="table-box">
+            <table>
+                <thead>
+                    <tr><th>الجهاز</th><th>الحالة</th><th>آخر ظهور</th></tr>
+                </thead>
+                <tbody id="adminActivityBody"></tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -717,7 +743,7 @@ async function refreshData(manual){
         document.getElementById("offlineBanner").style.display = "none";
         populateFilters();
         renderStats();
-        renderShopsRow();
+        renderActivityPage();
         updatePendingBadge();
         updatePendingAdminBadge();
         renderTable(); // عرض فوري (روابط Drive الأصلية) — قبل ما ننزّل الصور محلياً
@@ -798,7 +824,7 @@ function showOfflineBanner_(lastSyncAt){
     document.getElementById("offlineBanner").style.display = "block";
     populateFilters();
     renderStats();
-    renderShopsRow();
+    renderActivityPage();
     updatePendingBadge();
     renderTable();
 }
@@ -1045,17 +1071,17 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* ============================================================
-   المحلات النشطة — شريط فوق الجدول (سطح المكتب والموبايل)
+   صفحة حالة النشاط — صفحة كاملة مستقلة (مو شريط عالصفحة الرئيسية)
+   بقلبها جدول للمحلات وجدول لأجهزة الأدمن، سطح المكتب والموبايل
    ============================================================ */
-function renderShopsRow(){
-    const box = document.getElementById("shopsRow");
+function openActivityPage(){
+    renderActivityPage();
+    document.getElementById("activityPage").classList.add("open");
+}
+function closeActivityPage(){ document.getElementById("activityPage").classList.remove("open"); }
+
+function renderActivityPage(){
     const legend = document.getElementById("shopsLegend");
-    if(!box) return;
-    if(!allShops.length){
-        box.innerHTML = "";
-        if(legend) legend.innerHTML = "";
-        return;
-    }
     if(legend){
         legend.innerHTML = `
             <span><span class="dot online"></span>نشط الآن (خلال ١٠ دقائق)</span>
@@ -1066,23 +1092,49 @@ function renderShopsRow(){
         `;
     }
     const now = Date.now();
-    box.innerHTML = allShops.map(s => {
-        const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
-        const lastSeenMs = s.lastSeenAt ? new Date(s.lastSeenAt).getTime() : 0;
-        const diffMin = lastSeenMs ? (now - lastSeenMs) / 60000 : Infinity;
-        let dotClass = "offline";
-        if(s.status === "pending") dotClass = "pending";
-        else if(s.status === "rejected") dotClass = "rejected";
-        else if(diffMin <= 10) dotClass = "online";
-        else if(diffMin <= 24 * 60) dotClass = "recent";
-        const label = s.status === "pending" ? "بانتظار الموافقة"
-            : s.status === "rejected" ? "مرفوض"
-            : "آخر ظهور: " + formatRelativeTime_(s.lastSeenAt);
-        return `<span class="shop-chip" title="${esc(label)}">
-            <span class="dot ${dotClass}"></span>
-            ${esc(s.shopName || s.shopId)}<small>${esc(typeLabel)}</small>
-        </span>`;
-    }).join("");
+    const shopsBody = document.getElementById("shopsActivityBody");
+    if(shopsBody){
+        if(!allShops.length){
+            shopsBody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><h3>ولا محل متصل بعد</h3></div></td></tr>`;
+        }else{
+            shopsBody.innerHTML = allShops.map(s => {
+                const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
+                const lastSeenMs = s.lastSeenAt ? new Date(s.lastSeenAt).getTime() : 0;
+                const diffMin = lastSeenMs ? (now - lastSeenMs) / 60000 : Infinity;
+                let dotClass = "offline";
+                if(s.status === "pending") dotClass = "pending";
+                else if(s.status === "rejected") dotClass = "rejected";
+                else if(diffMin <= 10) dotClass = "online";
+                else if(diffMin <= 24 * 60) dotClass = "recent";
+                const label = s.status === "pending" ? "بانتظار الموافقة"
+                    : s.status === "rejected" ? "مرفوض"
+                    : dotClass === "online" ? "نشط الآن" : dotClass === "recent" ? "نشط اليوم" : "غير نشط";
+                return `<tr>
+                    <td class="prod-name">${esc(s.shopName || s.shopId)}</td>
+                    <td>${esc(typeLabel)}</td>
+                    <td><span class="status-cell"><span class="dot ${dotClass}"></span>${esc(label)}</span></td>
+                    <td>${esc(formatRelativeTime_(s.lastSeenAt))}</td>
+                </tr>`;
+            }).join("");
+        }
+    }
+    const adminBody = document.getElementById("adminActivityBody");
+    if(adminBody){
+        if(!allAdminDevices.length){
+            adminBody.innerHTML = `<tr><td colspan="3"><div class="empty-state"><h3>ولا جهاز أدمن اتصل بعد</h3></div></td></tr>`;
+        }else{
+            const statusLabel = {pending: "بانتظار الموافقة", approved: "معتمد", rejected: "مرفوض"};
+            adminBody.innerHTML = allAdminDevices.map(d => {
+                const status = d.status || "pending";
+                const dotClass = status === "approved" ? "online" : status;
+                return `<tr>
+                    <td class="prod-name">${esc(d.deviceLabel || "بدون اسم")}${d.isPrimary ? ' <span class="primary-badge">⭐ رئيسي</span>' : ""}</td>
+                    <td><span class="status-cell"><span class="dot ${dotClass}"></span>${esc(statusLabel[status] || status)}</span></td>
+                    <td>${esc(formatRelativeTime_(d.lastSeenAt))}</td>
+                </tr>`;
+            }).join("");
+        }
+    }
 }
 
 /* ============================================================
@@ -1212,7 +1264,7 @@ async function initialLoad(){
             allShops = snap.shops || [];
             populateFilters();
             renderStats();
-            renderShopsRow();
+            renderActivityPage();
             updatePendingBadge();
             renderTable();
         }
@@ -1227,7 +1279,7 @@ if(IS_DESKTOP_SERVER){
 setInterval(() => { if(config && config.apiUrl) refreshData(); }, 60000);
 if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
-        navigator.serviceWorker.register('sw.js').catch(function(){});
+        navigator.serviceWorker.register('sw.js').catch(function(err){ console.error('SW register failed', err); });
     });
 }
 </script>

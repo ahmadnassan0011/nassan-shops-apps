@@ -1,7 +1,7 @@
 // بدّل هذا الرقم (v1 -> v2 ...) كل ما تعدّل index.html تعديل مهم،
 // هيك المتصفح بيمسح النسخة القديمة المخزّنة ويجيب الجديدة.
-const CACHE = 'stationery-v3';
-const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'stationery-v4';
+const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
@@ -24,7 +24,7 @@ self.addEventListener('fetch', (e) => {
           if (res && res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
           return res;
         })
-        .catch(() => cached);
+        .catch(() => cached || (e.request.mode === 'navigate' ? caches.match('./index.html') : undefined));
       return cached || network;
     })
   );
