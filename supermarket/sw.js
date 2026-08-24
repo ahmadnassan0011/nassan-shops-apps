@@ -1,6 +1,6 @@
 // بدّل هذا الرقم (v1 -> v2 ...) كل ما تعدّل index.html تعديل مهم،
 // هيك المتصفح بيمسح النسخة القديمة المخزّنة ويجيب الجديدة.
-const CACHE = 'supermarket-v2';
+const CACHE = 'supermarket-v3';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {

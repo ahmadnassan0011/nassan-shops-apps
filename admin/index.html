@@ -187,7 +187,46 @@ tbody tr:hover td{background:var(--primary-softer)}
 .device-actions .approve:hover{background:var(--primary);color:#fff}
 .device-actions .reject{background:var(--danger-soft);color:var(--danger)}
 .device-actions .reject:hover{background:var(--danger);color:#fff}
+.device-actions .del{background:var(--danger-soft);color:var(--danger)}
+.device-actions .del:hover{background:var(--danger);color:#fff}
+.device-row.clickable{cursor:pointer;transition:var(--transition)}
+.device-row.clickable:hover{border-color:var(--primary);background:var(--primary-softer)}
+.primary-badge{
+    font-size:10px;font-weight:800;color:var(--warning);
+    display:inline-flex;align-items:center;gap:2px;margin-inline-start:4px;
+}
 .devices-empty{text-align:center;padding:24px;color:var(--text-muted);font-size:12.5px}
+
+/* شرائط المحلات النشطة — أعلى الصفحة */
+.shops-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.shop-chip{
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:8px 12px;font-size:12.5px;font-weight:700;color:var(--text);
+    box-shadow:var(--shadow-sm);
+}
+.shop-chip small{color:var(--text-muted);font-weight:600;margin-inline-start:2px}
+.shop-chip .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.shop-chip .dot.online{background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
+.shop-chip .dot.recent{background:#eab308}
+.shop-chip .dot.offline{background:var(--text-muted)}
+.shop-chip .dot.pending{background:var(--warning)}
+.shop-chip .dot.rejected{background:var(--danger)}
+
+/* منتقي مواد المحل — تحديد وحذف جزئي أو كلي */
+.picker-toolbar{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:10px;font-size:12.5px;color:var(--text-soft);
+}
+.picker-select-all{display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;color:var(--text)}
+.picker-select-all input{width:17px;height:17px}
+.picker-list{max-height:48vh;overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.picker-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer}
+.picker-row:last-child{border-bottom:none}
+.picker-row:hover{background:var(--surface-2)}
+.picker-row input{width:17px;height:17px;flex-shrink:0}
+.picker-row img{width:40px;height:34px;object-fit:cover;border-radius:7px;background:var(--surface-2);flex-shrink:0}
+.picker-row .name{flex:1;font-size:13px;font-weight:600;text-align:right}
 
 .offline-banner{
     background:var(--warning-soft); color:var(--warning); border:1px solid var(--warning);
@@ -254,6 +293,8 @@ tbody tr:hover td{background:var(--primary-softer)}
     <div class="offline-banner" id="offlineBanner" style="display:none"></div>
 
     <div class="stats-row" id="statsRow"></div>
+
+    <div class="shops-row" id="shopsRow"></div>
 
     <div class="toolbar">
         <input type="text" id="searchInput" placeholder="ابحث بالاسم أو الشركة أو الباركود..." oninput="renderTable()">
@@ -325,10 +366,28 @@ tbody tr:hover td{background:var(--primary-softer)}
 
 <div class="modal-overlay devices-modal" id="deleteShopModal">
     <div class="modal-content">
-        <h2>🗑 حذف بيانات محل</h2>
-        <p>بيحذف كل مواد المحل المحدد نهائياً من غوغل شيت (والصور من Drive) — وبتختفي تلقائياً من تطبيق الموظف ولوحة الأدمن. ما فيه تراجع بعد الحذف.</p>
+        <h2>🗑 حذف مواد محل</h2>
+        <p>دوس على المحل لعرض سجل مواده واختيار يلي بدك تحذفه — الكل أو بعضها بس.</p>
         <div id="deleteShopList"></div>
         <button class="btn block" onclick="closeDeleteShopModal()" type="button" style="margin-top:6px">إغلاق</button>
+    </div>
+</div>
+
+<div class="modal-overlay devices-modal" id="productsPickerModal">
+    <div class="modal-content" style="max-width:560px">
+        <h2 id="pickerShopTitle">مواد المحل</h2>
+        <div class="picker-toolbar">
+            <label class="picker-select-all">
+                <input type="checkbox" id="pickerSelectAll" onchange="togglePickerSelectAll(this.checked)">
+                تحديد الكل
+            </label>
+            <span id="pickerSelectedCount">0 محدد</span>
+        </div>
+        <div id="pickerList" class="picker-list"></div>
+        <div style="display:flex;gap:10px;margin-top:10px">
+            <button class="btn" onclick="closeProductsPickerModal()" type="button" style="flex:1">رجوع</button>
+            <button class="btn" id="pickerDeleteBtn" onclick="confirmDeleteSelectedProducts()" type="button" style="flex:1;background:var(--danger-soft);color:var(--danger)" disabled>حذف المحدد</button>
+        </div>
     </div>
 </div>
 
@@ -439,10 +498,11 @@ function renderDevicesModal(){
         const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
         const lastSeen = s.lastSeenAt ? new Date(s.lastSeenAt).toLocaleString("ar") : "—";
         const status = s.status || "approved";
-        const actions = status === "approved"
+        const actions = (status === "approved"
             ? `<button class="reject" title="رفض / إلغاء" onclick="setDeviceStatus('${esc(s.shopId)}','rejected')" type="button">✕</button>`
             : `<button class="approve" title="قبول" onclick="setDeviceStatus('${esc(s.shopId)}','approved')" type="button">✓</button>
-               <button class="reject" title="رفض" onclick="setDeviceStatus('${esc(s.shopId)}','rejected')" type="button">✕</button>`;
+               <button class="reject" title="رفض" onclick="setDeviceStatus('${esc(s.shopId)}','rejected')" type="button">✕</button>`)
+            + `<button class="del" title="حذف من اللائحة نهائياً" onclick="deleteShopDeviceRow('${esc(s.shopId)}','${esc((s.shopName || "").replace(/'/g,"\\'"))}')" type="button">🗑</button>`;
         return `<div class="device-row">
             <div class="info">
                 <strong>${esc(s.shopName || "بدون اسم")} — ${esc(typeLabel)}</strong>
@@ -467,6 +527,23 @@ async function setDeviceStatus(shopId, status){
             renderDevicesModal();
         }else{
             showToast("تعذّر تنفيذ العملية", true);
+        }
+    }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
+}
+async function deleteShopDeviceRow(shopId, shopName){
+    if(!confirm(`حذف "${shopName || shopId}" نهائياً من لائحة الأجهزة المتصلة؟\n(هاد ما بيحذف مواده — بس بيشيله من هالقائمة. لو رجع زامن، بيسجّل من جديد كـ"بانتظار الموافقة").`)) return;
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=deleteShopDevice&token=" + encodeURIComponent(config.apiToken) + "&shopId=" + encodeURIComponent(shopId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){
+            showToast("تم حذف الجهاز من اللائحة ✓");
+            await refreshData();
+            renderDevicesModal();
+        }else{
+            showToast("تعذّر تنفيذ الحذف", true);
         }
     }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
 }
@@ -529,13 +606,21 @@ function renderAdminDevicesModal(){
         const lastSeen = d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString("ar") : "—";
         const status = d.status || "pending";
         const isMe = d.deviceId === myId;
-        const actions = status === "approved"
-            ? (isMe ? "" : `<button class="reject" title="رفض / إلغاء" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>`)
-            : `<button class="approve" title="قبول" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','approved')" type="button">✓</button>
-               <button class="reject" title="رفض" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>`;
+        let actions;
+        if(d.isPrimary){
+            // الجهاز الرئيسي (نقطة الثقة الأولى) — ما بينرفض ولا بينحذف من محدا
+            actions = "";
+        }else if(status === "approved"){
+            actions = (isMe ? "" : `<button class="reject" title="رفض / إلغاء" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>`)
+                + `<button class="del" title="حذف من اللائحة نهائياً" onclick="deleteAdminDeviceRow('${esc(d.deviceId)}','${esc((d.deviceLabel || "").replace(/'/g,"\\'"))}')" type="button">🗑</button>`;
+        }else{
+            actions = `<button class="approve" title="قبول" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','approved')" type="button">✓</button>
+               <button class="reject" title="رفض" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>
+               <button class="del" title="حذف من اللائحة نهائياً" onclick="deleteAdminDeviceRow('${esc(d.deviceId)}','${esc((d.deviceLabel || "").replace(/'/g,"\\'"))}')" type="button">🗑</button>`;
+        }
         return `<div class="device-row">
             <div class="info">
-                <strong>${esc(d.deviceLabel || "بدون اسم")}${isMe ? " (هالجهاز)" : ""}</strong>
+                <strong>${esc(d.deviceLabel || "بدون اسم")}${isMe ? " (هالجهاز)" : ""}${d.isPrimary ? '<span class="primary-badge">⭐ رئيسي</span>' : ""}</strong>
                 <small>${esc(lastSeen)}</small>
             </div>
             <span class="device-status ${status}">${statusLabel[status] || status}</span>
@@ -557,6 +642,23 @@ async function setAdminDeviceStatus(deviceId, status){
             renderAdminDevicesModal();
         }else{
             showToast("تعذّر تنفيذ العملية", true);
+        }
+    }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
+}
+async function deleteAdminDeviceRow(deviceId, deviceLabel){
+    if(!confirm(`حذف "${deviceLabel || deviceId}" نهائياً من لائحة أجهزة الأدمن؟`)) return;
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=deleteAdminDevice&token=" + encodeURIComponent(config.apiToken) + "&deviceId=" + encodeURIComponent(deviceId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){
+            showToast("تم حذف الجهاز من اللائحة ✓");
+            await refreshData();
+            renderAdminDevicesModal();
+        }else{
+            showToast("تعذّر تنفيذ الحذف", true);
         }
     }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
 }
@@ -588,6 +690,7 @@ async function refreshData(manual){
         document.getElementById("offlineBanner").style.display = "none";
         populateFilters();
         renderStats();
+        renderShopsRow();
         updatePendingBadge();
         updatePendingAdminBadge();
         renderTable(); // عرض فوري (روابط Drive الأصلية) — قبل ما ننزّل الصور محلياً
@@ -668,6 +771,7 @@ function showOfflineBanner_(lastSyncAt){
     document.getElementById("offlineBanner").style.display = "block";
     populateFilters();
     renderStats();
+    renderShopsRow();
     updatePendingBadge();
     renderTable();
 }
@@ -914,7 +1018,32 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* ============================================================
-   حذف بيانات محل — سطح المكتب فقط (زر مخفي على نسخة الموبايل)
+   المحلات النشطة — شريط فوق الجدول (سطح المكتب والموبايل)
+   ============================================================ */
+function renderShopsRow(){
+    const box = document.getElementById("shopsRow");
+    if(!box) return;
+    if(!allShops.length){ box.innerHTML = ""; return; }
+    const now = Date.now();
+    box.innerHTML = allShops.map(s => {
+        const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
+        const lastSeenMs = s.lastSeenAt ? new Date(s.lastSeenAt).getTime() : 0;
+        const diffMin = lastSeenMs ? (now - lastSeenMs) / 60000 : Infinity;
+        let dotClass = "offline", label = "غير نشط";
+        if(s.status === "pending"){ dotClass = "pending"; label = "بانتظار الموافقة"; }
+        else if(s.status === "rejected"){ dotClass = "rejected"; label = "مرفوض"; }
+        else if(diffMin <= 10){ dotClass = "online"; label = "نشط الآن"; }
+        else if(diffMin <= 24 * 60){ dotClass = "recent"; label = "نشط اليوم"; }
+        return `<span class="shop-chip" title="${esc(label)}">
+            <span class="dot ${dotClass}"></span>
+            ${esc(s.shopName || s.shopId)}<small>${esc(typeLabel)}</small>
+        </span>`;
+    }).join("");
+}
+
+/* ============================================================
+   حذف مواد محل — سطح المكتب فقط (زر مخفي على نسخة الموبايل)
+   بتفوت على المحل، بتشوف سجل مواده، وبتحدد الكل أو بعضها للحذف
    ============================================================ */
 function openDeleteShopModal(){
     renderDeleteShopModal();
@@ -936,29 +1065,88 @@ function renderDeleteShopModal(){
     box.innerHTML = ids.map(id => {
         const s = shopsById[id] || {};
         const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
-        return `<div class="device-row">
+        const nameEsc = esc(s.shopName || id).replace(/'/g, "\\'");
+        return `<div class="device-row clickable" onclick="openProductsPicker('${esc(id)}','${nameEsc}')">
             <div class="info">
                 <strong>${esc(s.shopName || id)} — ${esc(typeLabel)}</strong>
                 <small>${counts[id]} مادة</small>
             </div>
-            <div class="device-actions">
-                <button class="reject" title="حذف كل مواد هالمحل" onclick="confirmDeleteShop('${esc(id)}','${esc((s.shopName || id).replace(/'/g,"\\'"))}',${counts[id]})" type="button">🗑</button>
-            </div>
+            <div class="device-actions"><button class="reject" title="عرض المواد" type="button">›</button></div>
         </div>`;
     }).join("");
 }
-async function confirmDeleteShop(shopId, shopName, count){
-    if(!confirm(`⚠️ سيتم حذف كل مواد "${shopName}" (${count} مادة) نهائياً من غوغل شيت والصور من Drive.\nبتختفي تلقائياً من تطبيق الموظف ولوحة الأدمن. لا يمكن التراجع.\n\nهل أنت متأكد؟`)) return;
-    if(!config || !config.apiUrl || !config.apiToken) return;
+
+/* منتقي المواد — تحديد وحذف جزئي أو كلي لمحل واحد */
+let pickerShopId = null;
+let pickerSelectedIds = new Set();
+
+function openProductsPicker(shopId, shopName){
+    pickerShopId = shopId;
+    pickerSelectedIds = new Set();
+    document.getElementById("pickerShopTitle").textContent = "🗑 " + shopName;
+    renderProductsPicker();
+    document.getElementById("productsPickerModal").classList.add("open");
+}
+function closeProductsPickerModal(){ document.getElementById("productsPickerModal").classList.remove("open"); }
+function pickerItems_(){ return allProducts.filter(p => p.shopId === pickerShopId); }
+function renderProductsPicker(){
+    const items = pickerItems_();
+    const box = document.getElementById("pickerList");
+    box.innerHTML = items.map(p => {
+        const img = p.imageUrl ? `<img src="${esc(p.imageUrl)}" loading="lazy" referrerpolicy="no-referrer">` : "";
+        const checked = pickerSelectedIds.has(p.id) ? "checked" : "";
+        return `<label class="picker-row">
+            <input type="checkbox" data-id="${esc(p.id)}" onchange="onPickerCheck('${esc(p.id)}', this.checked)" ${checked}>
+            ${img}
+            <span class="name">${esc(p["المادة"] || "بدون اسم")}</span>
+        </label>`;
+    }).join("") || '<div class="devices-empty">ما في مواد لهالمحل</div>';
+    updatePickerCount();
+}
+function onPickerCheck(id, checked){
+    if(checked) pickerSelectedIds.add(id); else pickerSelectedIds.delete(id);
+    updatePickerCount();
+}
+function togglePickerSelectAll(checked){
+    pickerSelectedIds = checked ? new Set(pickerItems_().map(p => p.id)) : new Set();
+    renderProductsPicker();
+}
+function updatePickerCount(){
+    const items = pickerItems_();
+    document.getElementById("pickerSelectedCount").textContent = pickerSelectedIds.size + " محدد";
+    document.getElementById("pickerSelectAll").checked = items.length > 0 && pickerSelectedIds.size === items.length;
+    document.getElementById("pickerDeleteBtn").disabled = pickerSelectedIds.size === 0;
+}
+async function confirmDeleteSelectedProducts(){
+    const count = pickerSelectedIds.size;
+    if(!count || !config || !config.apiUrl || !config.apiToken) return;
+    const allSelected = count === pickerItems_().length;
+    const warnAll = allSelected ? "\nهاد كل مواد هالمحل — بينمسح تسجيله من لائحة الأجهزة المتصلة كمان." : "";
+    if(!confirm(`⚠️ سيتم حذف ${count} مادة نهائياً من غوغل شيت (والصور من Drive). لا يمكن التراجع.${warnAll}\n\nمتابعة؟`)) return;
     try{
-        const sep = config.apiUrl.includes("?") ? "&" : "?";
-        const url = config.apiUrl + sep + "action=deleteShopProducts&token=" + encodeURIComponent(config.apiToken) + "&shopId=" + encodeURIComponent(shopId);
-        const res = await fetch(url);
+        const res = await fetch(config.apiUrl, {
+            method: "POST",
+            headers: {"Content-Type": "text/plain;charset=utf-8"},
+            body: JSON.stringify({
+                token: config.apiToken,
+                action: "deleteProducts",
+                adminDeviceId: getAdminDeviceId_(),
+                shopId: pickerShopId,
+                ids: Array.from(pickerSelectedIds)
+            })
+        });
         const json = await res.json();
         if(json && json.ok){
-            showToast(`تم حذف ${json.deleted} مادة من "${shopName}" ✓`);
+            showToast(`تم حذف ${json.deleted} مادة${json.deviceRemoved ? " — وانحذف المحل من لائحة الأجهزة" : ""} ✓`);
+            pickerSelectedIds = new Set();
             await refreshData();
-            renderDeleteShopModal();
+            if(json.deviceRemoved){
+                closeProductsPickerModal();
+                renderDeleteShopModal();
+            }else{
+                renderProductsPicker();
+                renderDeleteShopModal();
+            }
         }else{
             showToast("تعذّر تنفيذ الحذف", true);
         }

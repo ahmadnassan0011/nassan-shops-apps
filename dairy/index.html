@@ -2135,6 +2135,7 @@ window.addEventListener("offline", () => updateSyncStatusUI("offline"));
 setInterval(() => {
     if(!navigator.onLine) return;
     if(Object.keys(syncQueue).length) flushSyncQueue();
+    if(deviceApprovalStatus !== "pending" && deviceApprovalStatus !== "rejected") checkDeviceStatus(); // نبضة حياة لعرض "نشط الآن" بالأدمن
     reconcileWithServer();
 }, 60000);
 
