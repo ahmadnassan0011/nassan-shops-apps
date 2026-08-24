@@ -454,6 +454,21 @@ function esc(text){
         .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
         .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
+
+/* وقت نسبي مقروء ("قبل 3 دقايق" بدل تاريخ وساعة كاملين) — لعرض
+   آخر نشاط بلائحة الأجهزة (سطح المكتب والموبايل مع بعض). */
+function formatRelativeTime_(iso){
+    if(!iso) return "—";
+    const ms = new Date(iso).getTime();
+    if(!ms) return "—";
+    const diffSec = Math.max(0, (Date.now() - ms) / 1000);
+    if(diffSec < 45) return "الآن";
+    if(diffSec < 3600) return "قبل " + Math.max(1, Math.round(diffSec / 60)) + " دقيقة";
+    if(diffSec < 86400) return "قبل " + Math.round(diffSec / 3600) + " ساعة";
+    if(diffSec < 172800) return "أمس";
+    if(diffSec < 604800) return "قبل " + Math.round(diffSec / 86400) + " أيام";
+    return new Date(iso).toLocaleDateString("ar");
+}
 function loadConfig(){
     try{ return JSON.parse(localStorage.getItem("jm-dashboard-config") || "null"); }
     catch(e){ return null; }
@@ -504,7 +519,7 @@ function renderDevicesModal(){
     const statusLabel = {pending: "بانتظار الموافقة", approved: "مقبول", rejected: "مرفوض"};
     box.innerHTML = sorted.map(s => {
         const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
-        const lastSeen = s.lastSeenAt ? new Date(s.lastSeenAt).toLocaleString("ar") : "—";
+        const lastSeen = formatRelativeTime_(s.lastSeenAt);
         const status = s.status || "approved";
         const actions = (status === "approved"
             ? `<button class="reject" title="رفض / إلغاء" onclick="setDeviceStatus('${esc(s.shopId)}','rejected')" type="button">✕</button>`
@@ -613,7 +628,7 @@ function renderAdminDevicesModal(){
     const statusLabel = {pending: "بانتظار الموافقة", approved: "معتمد", rejected: "مرفوض"};
     const myId = getAdminDeviceId_();
     box.innerHTML = sorted.map(d => {
-        const lastSeen = d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString("ar") : "—";
+        const lastSeen = formatRelativeTime_(d.lastSeenAt);
         const status = d.status || "pending";
         const isMe = d.deviceId === myId;
         // حذف جهاز أدمن نهائياً: عملية حساسة، من سطح المكتب بس (نفس مبدأ "حذف محل")
@@ -1055,11 +1070,14 @@ function renderShopsRow(){
         const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
         const lastSeenMs = s.lastSeenAt ? new Date(s.lastSeenAt).getTime() : 0;
         const diffMin = lastSeenMs ? (now - lastSeenMs) / 60000 : Infinity;
-        let dotClass = "offline", label = "غير نشط";
-        if(s.status === "pending"){ dotClass = "pending"; label = "بانتظار الموافقة"; }
-        else if(s.status === "rejected"){ dotClass = "rejected"; label = "مرفوض"; }
-        else if(diffMin <= 10){ dotClass = "online"; label = "نشط الآن"; }
-        else if(diffMin <= 24 * 60){ dotClass = "recent"; label = "نشط اليوم"; }
+        let dotClass = "offline";
+        if(s.status === "pending") dotClass = "pending";
+        else if(s.status === "rejected") dotClass = "rejected";
+        else if(diffMin <= 10) dotClass = "online";
+        else if(diffMin <= 24 * 60) dotClass = "recent";
+        const label = s.status === "pending" ? "بانتظار الموافقة"
+            : s.status === "rejected" ? "مرفوض"
+            : "آخر ظهور: " + formatRelativeTime_(s.lastSeenAt);
         return `<span class="shop-chip" title="${esc(label)}">
             <span class="dot ${dotClass}"></span>
             ${esc(s.shopName || s.shopId)}<small>${esc(typeLabel)}</small>
