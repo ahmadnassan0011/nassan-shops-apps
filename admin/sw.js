@@ -1,6 +1,6 @@
 // بدّل هذا الرقم (v1 -> v2 ...) كل ما تعدّل index.html تعديل مهم،
 // هيك المتصفح بيمسح النسخة القديمة المخزّنة ويجيب الجديدة.
-const CACHE = 'admin-v3';
+const CACHE = 'admin-v4';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {

@@ -212,6 +212,13 @@ tbody tr:hover td{background:var(--primary-softer)}
 .shop-chip .dot.offline{background:var(--text-muted)}
 .shop-chip .dot.pending{background:var(--warning)}
 .shop-chip .dot.rejected{background:var(--danger)}
+.shops-legend{
+    display:flex;flex-wrap:wrap;gap:12px;
+    margin:-6px 0 14px 0;padding:0 2px;
+    font-size:11px;color:var(--text-muted);
+}
+.shops-legend span{display:inline-flex;align-items:center;gap:5px}
+.shops-legend .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 
 /* منتقي مواد المحل — تحديد وحذف جزئي أو كلي */
 .picker-toolbar{
@@ -295,6 +302,7 @@ tbody tr:hover td{background:var(--primary-softer)}
     <div class="stats-row" id="statsRow"></div>
 
     <div class="shops-row" id="shopsRow"></div>
+    <div class="shops-legend" id="shopsLegend"></div>
 
     <div class="toolbar">
         <input type="text" id="searchInput" placeholder="ابحث بالاسم أو الشركة أو الباركود..." oninput="renderTable()">
@@ -514,6 +522,8 @@ function renderDevicesModal(){
     }).join("");
 }
 async function setDeviceStatus(shopId, status){
+    const q = status === "approved" ? "قبول هالجهاز وتفعيل مزامنته؟" : "رفض هالجهاز؟ ما رح يقدر يزامن أي بيانات لحد ما توافق عليه.";
+    if(!confirm(q)) return;
     if(!config || !config.apiUrl || !config.apiToken) return;
     try{
         const sep = config.apiUrl.includes("?") ? "&" : "?";
@@ -606,17 +616,19 @@ function renderAdminDevicesModal(){
         const lastSeen = d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString("ar") : "—";
         const status = d.status || "pending";
         const isMe = d.deviceId === myId;
+        // حذف جهاز أدمن نهائياً: عملية حساسة، من سطح المكتب بس (نفس مبدأ "حذف محل")
+        const delBtn = IS_DESKTOP_SERVER
+            ? `<button class="del" title="حذف من اللائحة نهائياً" onclick="deleteAdminDeviceRow('${esc(d.deviceId)}','${esc((d.deviceLabel || "").replace(/'/g,"\\'"))}')" type="button">🗑</button>`
+            : "";
         let actions;
         if(d.isPrimary){
             // الجهاز الرئيسي (نقطة الثقة الأولى) — ما بينرفض ولا بينحذف من محدا
             actions = "";
         }else if(status === "approved"){
-            actions = (isMe ? "" : `<button class="reject" title="رفض / إلغاء" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>`)
-                + `<button class="del" title="حذف من اللائحة نهائياً" onclick="deleteAdminDeviceRow('${esc(d.deviceId)}','${esc((d.deviceLabel || "").replace(/'/g,"\\'"))}')" type="button">🗑</button>`;
+            actions = (isMe ? "" : `<button class="reject" title="رفض / إلغاء" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>`) + delBtn;
         }else{
             actions = `<button class="approve" title="قبول" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','approved')" type="button">✓</button>
-               <button class="reject" title="رفض" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>
-               <button class="del" title="حذف من اللائحة نهائياً" onclick="deleteAdminDeviceRow('${esc(d.deviceId)}','${esc((d.deviceLabel || "").replace(/'/g,"\\'"))}')" type="button">🗑</button>`;
+               <button class="reject" title="رفض" onclick="setAdminDeviceStatus('${esc(d.deviceId)}','rejected')" type="button">✕</button>` + delBtn;
         }
         return `<div class="device-row">
             <div class="info">
@@ -1022,8 +1034,22 @@ document.addEventListener("keydown", (e) => {
    ============================================================ */
 function renderShopsRow(){
     const box = document.getElementById("shopsRow");
+    const legend = document.getElementById("shopsLegend");
     if(!box) return;
-    if(!allShops.length){ box.innerHTML = ""; return; }
+    if(!allShops.length){
+        box.innerHTML = "";
+        if(legend) legend.innerHTML = "";
+        return;
+    }
+    if(legend){
+        legend.innerHTML = `
+            <span><span class="dot online"></span>نشط الآن (خلال ١٠ دقائق)</span>
+            <span><span class="dot recent"></span>نشط اليوم</span>
+            <span><span class="dot offline"></span>غير نشط</span>
+            <span><span class="dot pending"></span>بانتظار الموافقة</span>
+            <span><span class="dot rejected"></span>مرفوض</span>
+        `;
+    }
     const now = Date.now();
     box.innerHTML = allShops.map(s => {
         const typeLabel = BUSINESS_TYPE_LABELS[s.businessType] || s.businessType || "";
