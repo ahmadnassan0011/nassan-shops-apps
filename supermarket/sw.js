@@ -1,6 +1,6 @@
 // بدّل هذا الرقم (v1 -> v2 ...) كل ما تعدّل index.html تعديل مهم،
 // هيك المتصفح بيمسح النسخة القديمة المخزّنة ويجيب الجديدة.
-const CACHE = 'supermarket-v4';
+const CACHE = 'supermarket-v5';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -17,6 +17,10 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // طلبات خارج نطاق التطبيق (رابط المزامنة على Google Apps Script، صور Drive...)
+  // ما لازم نخزّنها ولا نعيد القديم منها — لازم تجي مباشرة من الشبكة كل مرة،
+  // وإلا البيانات بتضل عايضة حتى بعد "تحديث" (مشكلة فعلية شفناها بلوحة الأدمن).
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     caches.match(e.request).then((cached) => {
       const network = fetch(e.request)

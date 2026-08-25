@@ -1,6 +1,6 @@
 // بدّل هذا الرقم (v1 -> v2 ...) كل ما تعدّل index.html تعديل مهم،
 // هيك المتصفح بيمسح النسخة القديمة المخزّنة ويجيب الجديدة.
-const CACHE = 'admin-v8';
+const CACHE = 'admin-v9';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -21,6 +21,11 @@ self.addEventListener('fetch', (e) => {
   // ما لازم نتدخّل فيهن هون؛ خلّيهم يفشلوا مباشرة ع GitHub Pages
   // (الكود بالصفحة نفسه بيتعامل مع الفشل بلطف).
   if (e.request.url.includes('/admin-save') || e.request.url.includes('/admin-load')) return;
+  // طلبات خارج نطاق التطبيق (رابط المزامنة على Google Apps Script، صور Drive...)
+  // ما لازم نخزّنها ولا نعيد القديم منها — لازم تجي مباشرة من الشبكة كل مرة،
+  // وإلا الجدول بيضل عايض بيانات قديمة حتى بعد الضغط ع "تحديث" (نتيجة فعلية شفناها).
+  // التخزين المؤقت هون مخصّص بس لملفات التطبيق نفسه (نفس المصدر).
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     caches.match(e.request).then((cached) => {
       const network = fetch(e.request)
