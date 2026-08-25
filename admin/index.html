@@ -106,6 +106,10 @@ th{
 }
 td{padding:8px 6px;border-bottom:1px solid var(--border);text-align:center;font-size:12.5px;vertical-align:middle}
 tbody tr:hover td{background:var(--primary-softer)}
+.admin-mark-check{width:18px;height:18px;cursor:pointer}
+tr.admin-marked-row td{background:var(--primary-soft)}
+tr.admin-marked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary)}
+tr.admin-marked-row:hover td{background:var(--primary-softer)}
 .prod-name{font-weight:700;text-align:right;min-width:140px}
 .prod-img{width:52px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:var(--surface-2)}
 .prod-img.placeholder{display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px}
@@ -291,6 +295,7 @@ tbody tr:hover td{background:var(--primary-softer)}
         <div class="title-actions">
             <button class="pill-btn" onclick="refreshData(true)" type="button">↻ تحديث</button>
             <button class="pill-btn" onclick="openActivityPage()" type="button">📶 حالة النشاط</button>
+            <button class="pill-btn" onclick="openEditsPage()" type="button">📝 تعديلات المحلات<span class="pill-badge" id="pendingEditsBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openDevicesModal()" type="button">📱 الأجهزة<span class="pill-badge" id="pendingBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openAdminDevicesModal()" type="button">🔐 أجهزة الأدمن<span class="pill-badge" id="pendingAdminBadge" style="display:none">0</span></button>
             <button class="pill-btn" id="deleteShopBtn" onclick="openDeleteShopModal()" type="button" style="display:none;background:var(--danger-soft);color:var(--danger)">🗑 حذف محل</button>
@@ -312,6 +317,7 @@ tbody tr:hover td{background:var(--primary-softer)}
         <table>
             <thead>
                 <tr>
+                    <th>✓</th>
                     <th>الصورة</th>
                     <th>المادة</th>
                     <th>الباركود</th>
@@ -393,6 +399,27 @@ tbody tr:hover td{background:var(--primary-softer)}
                     <tr><th>الجهاز</th><th>الحالة</th><th>آخر ظهور</th></tr>
                 </thead>
                 <tbody id="adminActivityBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay activity-page" id="editsPage">
+    <div class="modal-content activity-page-content">
+        <div class="activity-page-header">
+            <h2>📝 تعديلات المحلات</h2>
+            <button class="btn" onclick="closeEditsPage()" type="button">إغلاق ✕</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+            كل مادة عدّلها صاحب المحل (أو أضافها) من وقت آخر مرة اطّلعت فيها — بدون ما يتغيّر أي شي بترتيب أو عرض المواد.
+            دوس ✓ بعد ما تشوف التعديل، وبتختفي المادة من هون بس (على كل أجهزة الأدمن).
+        </p>
+        <div class="table-box">
+            <table>
+                <thead>
+                    <tr><th>المادة</th><th>المحل</th><th>آخر تعديل</th><th>شفتها</th></tr>
+                </thead>
+                <tbody id="editsBody"></tbody>
             </table>
         </div>
     </div>
@@ -746,11 +773,13 @@ async function refreshData(manual){
         renderActivityPage();
         updatePendingBadge();
         updatePendingAdminBadge();
+        updatePendingEditsBadge();
         renderTable(); // عرض فوري (روابط Drive الأصلية) — قبل ما ننزّل الصور محلياً
 
         // نسخة احتياطية بلا إنترنت (بروابط Drive الأصلية — قبل ما تتبدّل لمسارات محلية تحت)
         saveSnapshotToIDB();
         if(!IS_DESKTOP_SERVER) cacheImagesInBackground();
+        migrateAdminAckOnce_();
 
         if(manual) showToast("تم التحديث — جارِ تنزيل الصور محلياً...");
         await syncImagesLocally(); // (نسخة سطح المكتب فقط) بينزّل الصور الجديدة/المتغيّرة، ويبدّل الروابط بمسارات محلية
@@ -828,6 +857,7 @@ function showOfflineBanner_(lastSyncAt){
     renderStats();
     renderActivityPage();
     updatePendingBadge();
+    updatePendingEditsBadge();
     renderTable();
 }
 
@@ -991,11 +1021,11 @@ function renderTable(){
     const data = getFiltered();
     const body = document.getElementById("tableBody");
     if(!allProducts.length){
-        body.innerHTML = `<tr><td colspan="12"><div class="empty-state"><h3>لا توجد بيانات بعد</h3></div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="13"><div class="empty-state"><h3>لا توجد بيانات بعد</h3></div></td></tr>`;
         return;
     }
     if(!data.length){
-        body.innerHTML = `<tr><td colspan="12"><div class="empty-state"><h3>لا نتائج مطابقة</h3></div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="13"><div class="empty-state"><h3>لا نتائج مطابقة</h3></div></td></tr>`;
         return;
     }
     body.innerHTML = data.map(p => {
@@ -1013,7 +1043,8 @@ function renderTable(){
             .join("");
         const typeLabel = BUSINESS_TYPE_LABELS[p.businessType] || p.businessType || "";
         const updated = p.updatedAt ? new Date(Number(p.updatedAt)).toLocaleDateString("ar") : "—";
-        return `<tr>
+        return `<tr class="${p.adminMarked ? 'admin-marked-row' : ''}">
+            <td><input type="checkbox" class="admin-mark-check" data-id="${esc(p.id)}" ${p.adminMarked ? "checked" : ""} aria-label="تحديد المادة"></td>
             <td>${img}</td>
             <td class="prod-name">${esc(p["المادة"])}</td>
             <td>${esc(p["الباركود"])}</td>
@@ -1030,6 +1061,34 @@ function renderTable(){
     }).join("");
 }
 
+/* علامة صح تابعة للأدمن نفسه (مو لصاحب المحل) — بتتزامن بين كل
+   أجهزة الأدمن (سطح مكتب وموبايل) عبر الشيت، وما إلها أي علاقة
+   ببيانات المحل أو ترتيب مواده. */
+async function toggleAdminMarked(id, marked, checkboxEl){
+    const p = allProducts.find(x => x.id === id);
+    if(!p || !config || !config.apiUrl || !config.apiToken) return;
+    const prev = p.adminMarked === true;
+    p.adminMarked = marked; // تحديث فوري بالواجهة قبل ما نستنى الخادم
+    if(checkboxEl) checkboxEl.closest("tr").classList.toggle("admin-marked-row", marked);
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=setAdminMarked&token=" + encodeURIComponent(config.apiToken)
+            + "&id=" + encodeURIComponent(id) + "&marked=" + (marked ? "true" : "false");
+        const res = await fetch(url);
+        const json = await res.json();
+        if(!json || !json.ok) throw new Error();
+    }catch(e){
+        p.adminMarked = prev; // فشل الحفظ — رجّع الحالة القديمة
+        if(checkboxEl){ checkboxEl.checked = prev; checkboxEl.closest("tr").classList.toggle("admin-marked-row", prev); }
+        showToast("تعذّر حفظ العلامة", true);
+    }
+}
+
+document.getElementById("tableBody").addEventListener("change", (e) => {
+    const check = e.target.closest(".admin-mark-check");
+    if(!check) return;
+    toggleAdminMarked(check.dataset.id, check.checked, check);
+});
 document.getElementById("tableBody").addEventListener("click", (e) => {
     const cell = e.target.closest(".prod-img-cell");
     if(!cell) return;
@@ -1137,6 +1196,85 @@ function renderActivityPage(){
             }).join("");
         }
     }
+}
+
+/* ============================================================
+   تعديلات المحلات — أي مادة عدّلها/أضافها صاحب المحل بعد آخر مرة
+   الأدمن "شافها" (ackProductEdit) بتظهر هون، بغض النظر عن ترتيب أو
+   عرض المواد بالجدول الأساسي — قراءة فقط، ما بتلمس بيانات المادة.
+   ============================================================ */
+function isPendingReview_(p){
+    if(!p.adminAckAt) return true;
+    const ack = new Date(p.adminAckAt).getTime();
+    const upd = new Date(p.serverUpdatedAt).getTime();
+    if(!ack || !upd) return false;
+    return upd > ack;
+}
+function pendingEditsList_(){
+    return allProducts.filter(isPendingReview_)
+        .slice()
+        .sort((a, b) => new Date(b.serverUpdatedAt).getTime() - new Date(a.serverUpdatedAt).getTime());
+}
+function updatePendingEditsBadge(){
+    const count = pendingEditsList_().length;
+    const badge = document.getElementById("pendingEditsBadge");
+    if(!badge) return;
+    if(count > 0){ badge.textContent = count; badge.style.display = "flex"; }
+    else{ badge.style.display = "none"; }
+}
+function openEditsPage(){
+    renderEditsPage();
+    document.getElementById("editsPage").classList.add("open");
+}
+function closeEditsPage(){ document.getElementById("editsPage").classList.remove("open"); }
+function renderEditsPage(){
+    const body = document.getElementById("editsBody");
+    const list = pendingEditsList_();
+    if(!list.length){
+        body.innerHTML = `<tr><td colspan="4"><div class="empty-state"><h3>ولا تعديل جديد — كلك مطّلع 👍</h3></div></td></tr>`;
+        return;
+    }
+    body.innerHTML = list.map(p => `<tr id="edit-row-${esc(p.id)}">
+        <td class="prod-name">${esc(p["المادة"] || "بدون اسم")}</td>
+        <td><span class="shop-badge">${esc(p.shopName || p.shopId)}</span></td>
+        <td>${esc(formatRelativeTime_(p.serverUpdatedAt))}</td>
+        <td><div class="device-actions" style="justify-content:center"><button class="approve" title="شفتها" onclick="ackProductEdit('${esc(p.id)}')" type="button">✓</button></div></td>
+    </tr>`).join("");
+}
+async function ackProductEdit(id){
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    const row = document.getElementById("edit-row-" + CSS.escape(id));
+    if(row) row.style.opacity = ".4";
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=ackProductEdit&token=" + encodeURIComponent(config.apiToken) + "&id=" + encodeURIComponent(id);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(!json || !json.ok) throw new Error();
+        const p = allProducts.find(x => x.id === id);
+        if(p) p.adminAckAt = new Date().toISOString();
+        renderEditsPage();
+        updatePendingEditsBadge();
+    }catch(e){
+        if(row) row.style.opacity = "";
+        showToast("تعذّر تسجيل الاطّلاع", true);
+    }
+}
+/* تهيئة أولى مرة وحدة بس (بعد أول تحديث ناجح) — حتى ما تطلع كل
+   المواد القديمة فجأة كـ"تعديلات جديدة" أول ما تفتح هالميزة. */
+async function migrateAdminAckOnce_(){
+    if(localStorage.getItem("jm-admin-ack-migrated") === "1") return;
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=migrateAdminAck&token=" + encodeURIComponent(config.apiToken);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){
+            localStorage.setItem("jm-admin-ack-migrated", "1");
+            if(json.migrated > 0) await refreshData();
+        }
+    }catch(e){ /* رح تعاود المحاولة أول تحديث جاي */ }
 }
 
 /* ============================================================
@@ -1268,6 +1406,7 @@ async function initialLoad(){
             renderStats();
             renderActivityPage();
             updatePendingBadge();
+            updatePendingEditsBadge();
             renderTable();
         }
     }catch(e){ /* ما في نسخة محفوظة بعد — عادي، بننتظر التحديث العادي */ }
