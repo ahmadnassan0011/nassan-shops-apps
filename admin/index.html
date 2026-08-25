@@ -758,6 +758,8 @@ async function refreshData(manual){
         const loaded = await loadLocalBackup();
         if(loaded){
             showToast("تعذّر الاتصال بغوغل شيت — تم عرض آخر نسخة محفوظة محلياً", true);
+        }else if(err.message === "unauthorized"){
+            showToast("الرمز السري غير صحيح — افتح ⚙ الإعدادات وقارنه حرف بحرف مع جهاز الأدمن الرئيسي", true);
         }else{
             showToast("تعذّر جلب البيانات: " + err.message, true);
         }
