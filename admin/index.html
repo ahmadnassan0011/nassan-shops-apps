@@ -296,6 +296,7 @@ tr.admin-marked-row:hover td{background:var(--primary-softer)}
         <div class="title-actions">
             <button class="pill-btn" onclick="refreshData(true)" type="button">↻ تحديث</button>
             <button class="pill-btn" onclick="openActivityPage()" type="button">📶 حالة النشاط</button>
+            <button class="pill-btn" onclick="openNewProductsPage()" type="button">🆕 مواد جديدة<span class="pill-badge" id="pendingNewBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openEditsPage()" type="button">📝 تعديلات المحلات<span class="pill-badge" id="pendingEditsBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openDevicesModal()" type="button">📱 الأجهزة<span class="pill-badge" id="pendingBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openAdminDevicesModal()" type="button">🔐 أجهزة الأدمن<span class="pill-badge" id="pendingAdminBadge" style="display:none">0</span></button>
@@ -426,6 +427,31 @@ tr.admin-marked-row:hover td{background:var(--primary-softer)}
                     </tr>
                 </thead>
                 <tbody id="editsBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay activity-page" id="newProductsPage">
+    <div class="modal-content activity-page-content">
+        <div class="activity-page-header">
+            <h2>🆕 مواد جديدة</h2>
+            <button class="btn" onclick="closeNewProductsPage()" type="button">إغلاق ✕</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+            كل مادة جديدة كلياً أضافها صاحب المحل بتظهر هون أولاً، ولسا ما بتظهر بالجدول الأساسي.
+            دوس ✓ بعد ما تشوفها، وبعدها بتنزل عالجدول الأساسي عادي (على كل أجهزة الأدمن).
+        </p>
+        <div class="table-box">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th><th>الصورة</th><th>المادة</th><th>الباركود</th><th>الشركة</th>
+                        <th>الوحدة 1</th><th>الوحدة 2</th><th>سعر الشراء</th><th>السعر</th><th>التحويل</th>
+                        <th>المحل</th><th>حقول إضافية</th><th>أُضيفت</th><th>شفتها</th>
+                    </tr>
+                </thead>
+                <tbody id="newProductsBody"></tbody>
             </table>
         </div>
     </div>
@@ -780,12 +806,14 @@ async function refreshData(manual){
         updatePendingBadge();
         updatePendingAdminBadge();
         updatePendingEditsBadge();
+        updatePendingNewBadge();
         renderTable(); // عرض فوري (روابط Drive الأصلية) — قبل ما ننزّل الصور محلياً
 
         // نسخة احتياطية بلا إنترنت (بروابط Drive الأصلية — قبل ما تتبدّل لمسارات محلية تحت)
         saveSnapshotToIDB();
         if(!IS_DESKTOP_SERVER) cacheImagesInBackground();
         migrateAdminAckOnce_();
+        migrateAdminNewAckOnce_();
 
         if(manual) showToast("تم التحديث — جارِ تنزيل الصور محلياً...");
         await syncImagesLocally(); // (نسخة سطح المكتب فقط) بينزّل الصور الجديدة/المتغيّرة، ويبدّل الروابط بمسارات محلية
@@ -864,6 +892,7 @@ function showOfflineBanner_(lastSyncAt){
     renderActivityPage();
     updatePendingBadge();
     updatePendingEditsBadge();
+    updatePendingNewBadge();
     renderTable();
 }
 
@@ -1013,6 +1042,9 @@ function getFiltered(){
     const shopId = document.getElementById("shopFilter").value;
     const type = document.getElementById("typeFilter").value;
     return allProducts.filter(p => {
+        // مادة جديدة لسا ما شافها الأدمن (✓ بصفحة "مواد جديدة") — ما بتظهر
+        // بالجدول الأساسي لحد ما يشوفها هناك أول.
+        if(isPendingNew_(p)) return false;
         if(shopId && p.shopId !== shopId) return false;
         if(type && p.businessType !== type) return false;
         if(q){
@@ -1308,6 +1340,82 @@ async function migrateAdminAckOnce_(){
 }
 
 /* ============================================================
+   مواد جديدة — أي مادة أضافها صاحب المحل من الصفر ولسا الأدمن ما
+   شافها (ackProductNew) بتظهر هون، بغض النظر عن ترتيب أو عرض
+   المواد بالجدول الأساسي — قراءة فقط، ما بتلمس بيانات المادة.
+   ============================================================ */
+function isPendingNew_(p){
+    return !p.adminNewAckAt;
+}
+function pendingNewList_(){
+    return allProducts.filter(isPendingNew_)
+        .slice()
+        .sort((a, b) => new Date(b.serverUpdatedAt).getTime() - new Date(a.serverUpdatedAt).getTime());
+}
+function updatePendingNewBadge(){
+    const count = pendingNewList_().length;
+    const badge = document.getElementById("pendingNewBadge");
+    if(!badge) return;
+    if(count > 0){ badge.textContent = count; badge.style.display = "flex"; }
+    else{ badge.style.display = "none"; }
+}
+function openNewProductsPage(){
+    renderNewProductsPage();
+    document.getElementById("newProductsPage").classList.add("open");
+}
+function closeNewProductsPage(){ document.getElementById("newProductsPage").classList.remove("open"); }
+function renderNewProductsPage(){
+    const body = document.getElementById("newProductsBody");
+    const list = pendingNewList_();
+    if(!list.length){
+        body.innerHTML = `<tr><td colspan="14"><div class="empty-state"><h3>ولا مادة جديدة — كلك مطّلع 👍</h3></div></td></tr>`;
+        return;
+    }
+    const numMap = buildNumMap_();
+    body.innerHTML = list.map(p => `<tr id="new-row-${esc(p.id)}">
+        ${productCoreCellsHtml_(p, numMap.get(p.id))}
+        <td>${esc(formatRelativeTime_(p.serverUpdatedAt))}</td>
+        <td><div class="device-actions" style="justify-content:center"><button class="approve" title="شفتها" onclick="ackProductNew('${esc(p.id)}')" type="button">✓</button></div></td>
+    </tr>`).join("");
+}
+async function ackProductNew(id){
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    const row = document.getElementById("new-row-" + CSS.escape(id));
+    if(row) row.style.opacity = ".4";
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=ackProductNew&token=" + encodeURIComponent(config.apiToken) + "&id=" + encodeURIComponent(id);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(!json || !json.ok) throw new Error();
+        const p = allProducts.find(x => x.id === id);
+        if(p) p.adminNewAckAt = new Date().toISOString();
+        renderNewProductsPage();
+        updatePendingNewBadge();
+        renderTable(); // هلق المادة صارت "مطّلع عليها" — بتظهر بالجدول الأساسي فوراً
+    }catch(e){
+        if(row) row.style.opacity = "";
+        showToast("تعذّر تسجيل الاطّلاع", true);
+    }
+}
+/* تهيئة أولى مرة وحدة بس (بعد أول تحديث ناجح) — حتى ما تطلع كل
+   المواد القديمة فجأة كـ"مواد جديدة" أول ما تفتح هالميزة. */
+async function migrateAdminNewAckOnce_(){
+    if(localStorage.getItem("jm-admin-new-ack-migrated") === "1") return;
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=migrateAdminNewAck&token=" + encodeURIComponent(config.apiToken);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){
+            localStorage.setItem("jm-admin-new-ack-migrated", "1");
+            if(json.migrated > 0) await refreshData();
+        }
+    }catch(e){ /* رح تعاود المحاولة أول تحديث جاي */ }
+}
+
+/* ============================================================
    حذف مواد محل — سطح المكتب فقط (زر مخفي على نسخة الموبايل)
    بتفوت على المحل، بتشوف سجل مواده، وبتحدد الكل أو بعضها للحذف
    ============================================================ */
@@ -1437,6 +1545,7 @@ async function initialLoad(){
             renderActivityPage();
             updatePendingBadge();
             updatePendingEditsBadge();
+            updatePendingNewBadge();
             renderTable();
         }
     }catch(e){ /* ما في نسخة محفوظة بعد — عادي، بننتظر التحديث العادي */ }
