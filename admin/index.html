@@ -849,7 +849,20 @@ async function syncImagesLocally(){
         });
         const json = await res.json();
         if(json && Array.isArray(json.products)){
-            allProducts = json.products; // هلق الصور مسارات محلية (images/admin/...)
+            // منحدّث بس روابط الصور (imageUrl/imageUrls) بمسارات محلية، مو كامل
+            // المادة — لأن هالطلب كان ماخد "لقطة" (snapshot) من allProducts وقت
+            // ما انبعت، ولو المستخدم دوس ✓ (شفتها) على تعديل أو مادة جديدة وقت
+            // ما التنزيل عم يصير، استبدال allProducts كامل كان رح يرجّع الحالة
+            // القديمة قبل الـ ✓ (البيانات برجعت من غوغل شيت أصلاً صحيحة، بس
+            // مسارات الصور هي يلي ناقصة محلياً).
+            const localById = new Map(json.products.map(p => [String(p.id), p]));
+            allProducts.forEach(p => {
+                const local = localById.get(String(p.id));
+                if(local){
+                    p.imageUrl = local.imageUrl;
+                    p.imageUrls = local.imageUrls;
+                }
+            });
             allShops = json.shops || allShops;
             renderTable();
             showToast("تم تنزيل الصور محلياً ✓");
