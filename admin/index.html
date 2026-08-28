@@ -298,6 +298,7 @@ tr.admin-marked-row:hover td{background:var(--primary-softer)}
             <button class="pill-btn" onclick="openActivityPage()" type="button">📶 حالة النشاط</button>
             <button class="pill-btn" onclick="openNewProductsPage()" type="button">🆕 مواد جديدة<span class="pill-badge" id="pendingNewBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openEditsPage()" type="button">📝 تعديلات المحلات<span class="pill-badge" id="pendingEditsBadge" style="display:none">0</span></button>
+            <button class="pill-btn" onclick="openShopAccountsModal()" type="button">🔑 حسابات المحلات</button>
             <button class="pill-btn" onclick="openDevicesModal()" type="button">📱 الأجهزة<span class="pill-badge" id="pendingBadge" style="display:none">0</span></button>
             <button class="pill-btn" onclick="openAdminDevicesModal()" type="button">🔐 أجهزة الأدمن<span class="pill-badge" id="pendingAdminBadge" style="display:none">0</span></button>
             <button class="pill-btn" id="deleteShopBtn" onclick="openDeleteShopModal()" type="button" style="display:none;background:var(--danger-soft);color:var(--danger)">🗑 حذف محل</button>
@@ -358,6 +359,40 @@ tr.admin-marked-row:hover td{background:var(--primary-softer)}
             <input type="text" id="apiTokenInput" placeholder="الرمز السري">
         </div>
         <button class="btn primary block" onclick="saveConfig()" type="button">حفظ وتحديث</button>
+    </div>
+</div>
+
+<div class="modal-overlay devices-modal" id="shopAccountsModal">
+    <div class="modal-content">
+        <h2>🔑 حسابات المحلات</h2>
+        <p>حساب (اسم مستخدم + كلمة سر) اختياري لكل محل — لو انمسح تطبيق المحل أو تغيّر الموبايل، صاحب المحل بيقدر يسجّل دخول بنفس الحساب من جهاز جديد ويسترجع بياناته القديمة تلقائياً. إنشاء الحساب هون هو نفسه الموافقة.</p>
+        <div class="field-row"><label>اسم مستخدم</label><input type="text" id="newAccountUsername" placeholder="مثلاً: dairy_ahmad"></div>
+        <div class="field-row">
+            <label>كلمة السر</label>
+            <div style="display:flex;gap:6px">
+                <input type="text" id="newAccountPassword" placeholder="كلمة السر" style="flex:1">
+                <button class="btn" type="button" onclick="generateAccountPassword()">توليد تلقائي</button>
+            </div>
+        </div>
+        <div class="field-row"><label>اسم المحل</label><input type="text" id="newAccountShopName" placeholder="اسم المحل"></div>
+        <div class="field-row">
+            <label>نوع العمل</label>
+            <select id="newAccountBusinessType">
+                <option value="supermarket">سوبرماركت</option>
+                <option value="dairy">ألبان وأجبان</option>
+                <option value="stationery">قرطاسية ومكتبة</option>
+                <option value="accessories">إكسسوارات</option>
+                <option value="generic">عام</option>
+            </select>
+        </div>
+        <div class="field-row">
+            <label>ربط بمحل موجود (اختياري)</label>
+            <select id="newAccountExistingShop"><option value="">— محل جديد كلياً —</option></select>
+        </div>
+        <button class="btn primary block" onclick="createShopAccountSubmit()" type="button">➕ إنشاء الحساب</button>
+        <hr style="margin:14px 0;border-color:var(--border)">
+        <div id="shopAccountsList"></div>
+        <button class="btn block" onclick="closeShopAccountsModal()" type="button" style="margin-top:6px">إغلاق</button>
     </div>
 </div>
 
@@ -577,6 +612,123 @@ function openConfigModal(){
     document.getElementById("configModal").classList.add("open");
 }
 function closeConfigModal(){ document.getElementById("configModal").classList.remove("open"); }
+
+/* ============================================================
+   حسابات المحلات — اسم مستخدم + كلمة سر اختيارية لكل محل (فوق
+   نظام الموافقة اليدوية، مش بديل عنه). إنشاء الحساب هون = الموافقة.
+   ============================================================ */
+let allShopAccounts = [];
+function openShopAccountsModal(){
+    populateExistingShopSelect_();
+    loadShopAccounts();
+    document.getElementById("shopAccountsModal").classList.add("open");
+}
+function closeShopAccountsModal(){ document.getElementById("shopAccountsModal").classList.remove("open"); }
+function populateExistingShopSelect_(){
+    const sel = document.getElementById("newAccountExistingShop");
+    sel.innerHTML = '<option value="">— محل جديد كلياً —</option>' +
+        allShops.map(s => `<option value="${esc(s.shopId)}">${esc(s.shopName || s.shopId)}</option>`).join("");
+}
+function generateAccountPassword(){
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let pw = "";
+    for(let i = 0; i < 10; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+    document.getElementById("newAccountPassword").value = pw;
+}
+async function loadShopAccounts(){
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=listShopAccounts&token=" + encodeURIComponent(config.apiToken) + "&adminDeviceId=" + encodeURIComponent(getAdminDeviceId_());
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){ allShopAccounts = json.accounts || []; renderShopAccountsList(); }
+    }catch(e){ showToast("تعذّر تحميل الحسابات", true); }
+}
+function renderShopAccountsList(){
+    const box = document.getElementById("shopAccountsList");
+    if(!allShopAccounts.length){
+        box.innerHTML = '<div class="devices-empty">ولا حساب لسا</div>';
+        return;
+    }
+    box.innerHTML = allShopAccounts.map(a => {
+        const typeLabel = BUSINESS_TYPE_LABELS[a.businessType] || a.businessType || "";
+        return `<div class="device-row">
+            <div class="info">
+                <strong>${esc(a.username)}</strong>
+                <small>${esc(a.shopName || a.shopId)} — ${esc(typeLabel)} — ${esc(formatRelativeTime_(a.createdAt))}</small>
+            </div>
+            <div class="device-actions">
+                <button class="reject" title="تصفير كلمة السر" onclick="resetShopPasswordRow('${esc(a.username)}')" type="button">🔑</button>
+                <button class="del" title="حذف الحساب" onclick="deleteShopAccountRow('${esc(a.username)}')" type="button">🗑</button>
+            </div>
+        </div>`;
+    }).join("");
+}
+async function createShopAccountSubmit(){
+    const username = document.getElementById("newAccountUsername").value.trim();
+    const password = document.getElementById("newAccountPassword").value.trim();
+    const shopName = document.getElementById("newAccountShopName").value.trim();
+    const businessType = document.getElementById("newAccountBusinessType").value;
+    const existingShopId = document.getElementById("newAccountExistingShop").value;
+    if(!username || !password || !shopName){
+        showToast("عبّي اسم المستخدم وكلمة السر واسم المحل", true);
+        return;
+    }
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const res = await fetch(config.apiUrl, {
+            method: "POST",
+            headers: {"Content-Type": "text/plain;charset=utf-8"},
+            body: JSON.stringify({
+                token: config.apiToken, action: "createShopAccount",
+                adminDeviceId: getAdminDeviceId_(),
+                username: username, password: password, shopName: shopName, businessType: businessType,
+                shopId: existingShopId || undefined
+            })
+        });
+        const json = await res.json();
+        if(json && json.ok){
+            showToast("تم إنشاء الحساب ✓");
+            document.getElementById("newAccountUsername").value = "";
+            document.getElementById("newAccountPassword").value = "";
+            document.getElementById("newAccountShopName").value = "";
+            document.getElementById("newAccountExistingShop").value = "";
+            loadShopAccounts();
+        }else if(json && json.error === "username_taken"){
+            showToast("اسم المستخدم محجوز، جرّب اسم تاني", true);
+        }else{
+            showToast("تعذّر إنشاء الحساب", true);
+        }
+    }catch(e){ showToast("تعذّر إنشاء الحساب", true); }
+}
+async function resetShopPasswordRow(username){
+    const newPassword = prompt(`كلمة سر جديدة للحساب "${username}":`);
+    if(!newPassword) return;
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const res = await fetch(config.apiUrl, {
+            method: "POST",
+            headers: {"Content-Type": "text/plain;charset=utf-8"},
+            body: JSON.stringify({token: config.apiToken, action: "resetShopPassword", adminDeviceId: getAdminDeviceId_(), username: username, newPassword: newPassword})
+        });
+        const json = await res.json();
+        if(json && json.ok) showToast("تم تصفير كلمة السر — بلّغ صاحب المحل فيها: " + newPassword);
+        else showToast("تعذّر تصفير كلمة السر", true);
+    }catch(e){ showToast("تعذّر تصفير كلمة السر", true); }
+}
+async function deleteShopAccountRow(username){
+    if(!confirm(`حذف حساب "${username}"؟ (المحل نفسه وبياناته ما بتتحذف، بس هالحساب ما رح يقدر يسجّل دخول فيه بعدين)`)) return;
+    if(!config || !config.apiUrl || !config.apiToken) return;
+    try{
+        const sep = config.apiUrl.includes("?") ? "&" : "?";
+        const url = config.apiUrl + sep + "action=deleteShopAccount&token=" + encodeURIComponent(config.apiToken) + "&adminDeviceId=" + encodeURIComponent(getAdminDeviceId_()) + "&username=" + encodeURIComponent(username);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json && json.ok){ showToast("تم حذف الحساب"); loadShopAccounts(); }
+        else showToast("تعذّر حذف الحساب", true);
+    }catch(e){ showToast("تعذّر حذف الحساب", true); }
+}
 
 /* ============================================================
    الأجهزة — قبول/رفض أجهزة الموظفين الجديدة قبل ما تقدر تزامن

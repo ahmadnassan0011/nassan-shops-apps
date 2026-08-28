@@ -1656,6 +1656,10 @@ tr.checked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary) inset}
                 <label>إعادة إرسال شاملة<small>لو في مواد ما وصلت للسحابة (مثلاً استيراد قديم قبل هالتحديث)</small></label>
                 <button class="btn btn-ghost" type="button" onclick="syncAllProductsNow()">🔄 زامن كل المواد الآن</button>
             </div>
+            <div class="setting-row">
+                <label>عندك حساب؟<small>سجّل دخول بحساب أعطاك ياه صاحب النظام لاسترجاع اسم متجرك ومنتجاتك القديمة على هالجهاز</small></label>
+                <button class="btn btn-ghost" type="button" onclick="openModal('shopLoginPopup')">🔑 تسجيل الدخول لحساب</button>
+            </div>
         </div>
 
         <div style="display:flex;gap:10px;margin-top:6px">
@@ -1698,6 +1702,32 @@ tr.checked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary) inset}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 متابعة
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ نافذة تسجيل الدخول لحساب موجود ============ -->
+<div class="modal-overlay" id="shopLoginPopup" role="dialog" aria-modal="true" aria-labelledby="shopLoginTitle">
+    <div class="modal-content" style="max-width:420px">
+        <div class="modal-header">
+            <h2 id="shopLoginTitle">🔑 تسجيل الدخول لحساب موجود</h2>
+        </div>
+        <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">
+            لازم تعبّي رابط المزامنة والرمز السري فوق أولاً. بعد الدخول، رح تنسحب اسم متجرك ومنتجاتك القديمة تلقائياً من السحابة.
+        </p>
+        <div class="mini-form" style="margin-bottom:16px">
+            <div class="mini-input">
+                <label for="loginUsernameInput">اسم المستخدم</label>
+                <input type="text" id="loginUsernameInput" autocomplete="off">
+            </div>
+            <div class="mini-input">
+                <label for="loginPasswordInput">كلمة السر</label>
+                <input type="password" id="loginPasswordInput" autocomplete="off">
+            </div>
+        </div>
+        <div style="display:flex;gap:10px">
+            <button class="btn btn-ghost" style="flex:1" type="button" onclick="closeModal('shopLoginPopup')">إلغاء</button>
+            <button class="btn btn-primary" style="flex:2" type="button" onclick="shopLoginSubmit()">دخول</button>
         </div>
     </div>
 </div>
@@ -1958,6 +1988,144 @@ function saveShopSetup(fromWelcome){
     }else{
         showMessage("تم حفظ إعدادات المتجر");
     }
+}
+
+/* ============================================================
+   تسجيل الدخول لحساب محل موجود — استرجاع shopId والاسم والمنتجات
+   القديمة من السحابة (مثلاً بعد حذف التطبيق أو تغيير الموبايل).
+   ============================================================ */
+async function shopLoginSubmit(){
+    if(!syncConfigured()){
+        showMessage("عبّي رابط المزامنة والرمز السري فوق أولاً", "warn");
+        return;
+    }
+    const username = document.getElementById("loginUsernameInput").value.trim();
+    const password = document.getElementById("loginPasswordInput").value;
+    if(!username || !password){
+        showMessage("اكتب اسم المستخدم وكلمة السر", "warn");
+        return;
+    }
+    showMessage("جارِ تسجيل الدخول...");
+    try{
+        const res = await fetch(shopProfile.syncUrl, {
+            method: "POST",
+            headers: {"Content-Type": "text/plain;charset=utf-8"},
+            body: JSON.stringify({token: shopProfile.syncToken, action: "shopLogin", username: username, password: password})
+        });
+        const json = await res.json();
+        if(!json || !json.ok){
+            showMessage("اسم المستخدم أو كلمة السر غلط", "error");
+            return;
+        }
+        if(json.businessType !== FIXED_BUSINESS_TYPE){
+            showMessage("هالحساب مسجّل لنشاط مختلف — افتح تطبيق النشاط الصحيح لهالمحل", "error");
+            return;
+        }
+        await applyShopLogin_(json);
+    }catch(e){
+        showMessage("تعذّر الاتصال بالسيرفر", "error");
+    }
+}
+function exportLocalProductsBackup_(){
+    const dataStr = JSON.stringify(products, null, 2);
+    const blob = new Blob([dataStr], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "products-backup-before-login.json";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+async function applyShopLogin_(account){
+    if(products.length > 0){
+        exportLocalProductsBackup_();
+        if(!confirm(`عندك ${products.length} مادة محلية على هالجهاز مش مرتبطة بحساب — تم تصدير نسخة احتياطية منها تلقائياً.\nمتابعة تسجيل الدخول رح تستبدلها ببيانات الحساب. متابعة؟`)){
+            showMessage("تم إلغاء تسجيل الدخول", "error");
+            return;
+        }
+    }
+    closeModal("shopLoginPopup");
+    shopProfile.shopId = account.shopId;
+    shopProfile.shopName = account.shopName || shopProfile.shopName;
+    shopProfile.businessType = FIXED_BUSINESS_TYPE;
+    saveShopProfile();
+    document.getElementById("shopNameSetting").value = shopProfile.shopName;
+    document.getElementById("shopNameInput").value = shopProfile.shopName;
+    syncQueue = {};
+    persistSyncQueue();
+    deviceApprovalStatus = "approved";
+    updateSyncStatusUI();
+    showMessage("تم تسجيل الدخول — جارِ استرجاع بياناتك...");
+    await pullMyProducts();
+    applyBusinessType();
+}
+function cloudProductToLocal_(p){
+    return {
+        id: p.id,
+        المادة: p["المادة"] || "",
+        الباركود: p["الباركود"] || "",
+        الشركة: p["الشركة"] || "",
+        الوحدة_1: p["الوحدة_1"] || "",
+        الوحدة_2: p["الوحدة_2"] || "",
+        آخر_سعر_شراء: p["آخر_سعر_شراء"] || "",
+        السعر: p["السعر"] || "",
+        التحويل: p["التحويل"] || "",
+        checked: p.checked === true,
+        extra: p.extra || {},
+        images: [],
+        __cloudImageUrls: (Array.isArray(p.imageUrls) && p.imageUrls.length) ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []),
+        updatedAt: Number(p.updatedAt) || Date.now()
+    };
+}
+function driveFileId_(url){
+    const m = /[?&]id=([^&]+)/.exec(url || "");
+    return m ? m[1] : null;
+}
+async function pullMyProducts(){
+    try{
+        const sep = shopProfile.syncUrl.includes("?") ? "&" : "?";
+        const url = shopProfile.syncUrl + sep + "action=myProducts&token=" + encodeURIComponent(shopProfile.syncToken) + "&shopId=" + encodeURIComponent(shopProfile.shopId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if(!json || !json.ok){
+            showMessage("تعذّر جلب بياناتك من السحابة", "error");
+            return;
+        }
+        products = (json.products || []).map(cloudProductToLocal_).map(ensureProductDefaults);
+        saveProducts();
+        renderTable();
+        showMessage(`تم استرجاع ${products.length} مادة — جارِ تنزيل الصور بالخلفية...`);
+        hydrateImagesFromCloud_();
+    }catch(e){
+        showMessage("تعذّر الاتصال بالسيرفر لاسترجاع البيانات", "error");
+    }
+}
+/* بتنزّل صور كل مادة مسترجَعة بالخلفية (واحدة تلو الأخرى، حتى ما
+   نحمّل السيرفر دفعة وحدة) وتحوّلها لنفس شكل الصور المحلي المعتاد
+   (data URL base64) — بدون أي تعديل على كود العرض/التعديل. */
+async function hydrateImagesFromCloud_(){
+    for(const p of products){
+        const urls = p.__cloudImageUrls || [];
+        delete p.__cloudImageUrls;
+        if(!urls.length) continue;
+        const images = [];
+        for(const u of urls){
+            const fileId = driveFileId_(u);
+            if(!fileId) continue;
+            try{
+                const sep = shopProfile.syncUrl.includes("?") ? "&" : "?";
+                const imgUrl = shopProfile.syncUrl + sep + "action=image&token=" + encodeURIComponent(shopProfile.syncToken) + "&fileId=" + encodeURIComponent(fileId);
+                const res = await fetch(imgUrl);
+                const json = await res.json();
+                if(json && json.ok && json.base64){
+                    images.push("data:" + (json.mimeType || "image/jpeg") + ";base64," + json.base64);
+                }
+            }catch(e){ /* صورة وحدة فشلت ما لازم توقف الباقي */ }
+        }
+        if(images.length){ p.images = images; p.image = images[0]; }
+    }
+    saveProducts();
+    renderTable();
 }
 
 function renderExtraFieldsForm(){
