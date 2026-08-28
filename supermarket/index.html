@@ -1219,7 +1219,7 @@ tr.checked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary) inset}
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;stroke:#fff"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 المواد: <span class="count" id="productsCount">0</span>
             </button>
-            <button class="counter-box" id="syncStatusBtn" onclick="flushSyncQueue()" type="button" title="اضغط للمزامنة الآن">
+            <button class="counter-box" id="syncStatusBtn" onclick="openPendingSyncPopup()" type="button" title="اضغط لعرض المواد بانتظار الرفع">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;stroke:#fff"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                 <span id="syncStatusText">المزامنة غير مفعّلة</span>
             </button>
@@ -1680,25 +1680,24 @@ tr.checked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary) inset}
         <div class="modal-header">
             <h2 id="shopSetupTitle">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                مرحباً! عرّفنا على متجرك
+                مرحباً! فعّل المزامنة أولاً
             </h2>
         </div>
         <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">
-            هاي الصفحة مخصصة لنشاط سوبرماركت. اكتب اسم متجرك وابدأ الإضافة.
+            اكتب رابط المزامنة والرمز السري يلي أعطاك ياهم صاحب النظام — وبعدها بتسجّل دخول بحسابك (اسم مستخدم وكلمة سر) وبترجعلك بياناتك تلقائياً.
         </p>
         <div class="mini-form" style="margin-bottom:16px">
             <div class="mini-input">
-                <label for="shopNameInput">اسم المتجر</label>
-                <input type="text" id="shopNameInput" placeholder="مثال: سوبرماركت النجمة" autocomplete="off">
+                <label for="firstRunSyncUrl">رابط المزامنة</label>
+                <input type="text" id="firstRunSyncUrl" placeholder="https://script.google.com/macros/..." autocomplete="off" dir="ltr">
             </div>
             <div class="mini-input">
-                <label for="businessTypeSelect">نوع النشاط</label>
-                <select id="businessTypeSelect" class="field-input"></select>
+                <label for="firstRunSyncToken">الرمز السري</label>
+                <input type="text" id="firstRunSyncToken" placeholder="رمز سري" autocomplete="off" dir="ltr">
             </div>
         </div>
         <div style="display:flex;gap:10px">
-            <button class="btn btn-ghost" style="flex:1" type="button" onclick="closeModal('shopSetupPopup')">لاحقاً</button>
-            <button class="btn btn-primary" style="flex:2" type="button" onclick="saveShopSetup(true)">
+            <button class="btn btn-primary btn-block" type="button" onclick="firstRunContinue()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 متابعة
             </button>
@@ -1713,7 +1712,7 @@ tr.checked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary) inset}
             <h2 id="shopLoginTitle">🔑 تسجيل الدخول لحساب موجود</h2>
         </div>
         <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">
-            لازم تعبّي رابط المزامنة والرمز السري فوق أولاً. بعد الدخول، رح تنسحب اسم متجرك ومنتجاتك القديمة تلقائياً من السحابة.
+            بعد الدخول، رح ينسحب اسم متجرك ومنتجاتك القديمة (إن وجدت) تلقائياً من السحابة.
         </p>
         <div class="mini-form" style="margin-bottom:16px">
             <div class="mini-input">
@@ -1728,6 +1727,23 @@ tr.checked-row td:first-child{box-shadow:inset 4px 0 0 var(--primary) inset}
         <div style="display:flex;gap:10px">
             <button class="btn btn-ghost" style="flex:1" type="button" onclick="closeModal('shopLoginPopup')">إلغاء</button>
             <button class="btn btn-primary" style="flex:2" type="button" onclick="shopLoginSubmit()">دخول</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ نافذة المواد بانتظار الرفع ============ -->
+<div class="modal-overlay" id="pendingSyncPopup" role="dialog" aria-modal="true" aria-labelledby="pendingSyncTitle">
+    <div class="modal-content" style="max-width:480px">
+        <div class="modal-header">
+            <h2 id="pendingSyncTitle">⏳ المواد بانتظار الرفع</h2>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+            هاي المواد محفوظة عندك بالجهاز، بس لسا ما وصلت للسحابة (مثلاً بسبب انقطاع النت) — رح توصل تلقائياً أول ما يرجع الاتصال.
+        </p>
+        <div id="pendingSyncList" style="max-height:50vh;overflow:auto"></div>
+        <div style="display:flex;gap:10px;margin-top:12px">
+            <button class="btn btn-ghost" style="flex:1" type="button" onclick="closeModal('pendingSyncPopup')">إغلاق</button>
+            <button class="btn btn-primary" style="flex:2" type="button" onclick="flushSyncQueue()">🔄 زامن الآن</button>
         </div>
     </div>
 </div>
@@ -1953,35 +1969,51 @@ let shopProfile = loadShopProfile();
 
 function populateBusinessTypeSelects(){
     const options = `<option value="${FIXED_BUSINESS_TYPE}">${esc(BUSINESS_TYPES[FIXED_BUSINESS_TYPE].label)}</option>`;
-    ["businessTypeSelect","businessTypeSetting"].forEach(id => {
-        const el = document.getElementById(id);
-        if(el){ el.innerHTML = options; el.value = FIXED_BUSINESS_TYPE; el.disabled = true; }
-    });
+    const el = document.getElementById("businessTypeSetting");
+    if(el){ el.innerHTML = options; el.value = FIXED_BUSINESS_TYPE; el.disabled = true; }
 }
 function ensureShopProfile(){
     if(!shopProfile){
-        shopProfile = Object.assign({}, DEFAULT_SHOP_PROFILE, {shopId: genId()});
-        openModal("shopSetupPopup");
+        shopProfile = Object.assign({}, DEFAULT_SHOP_PROFILE);
+        saveShopProfile();
     }
     populateBusinessTypeSelects();
-    document.getElementById("businessTypeSelect").value = shopProfile.businessType;
-    document.getElementById("shopNameInput").value = shopProfile.shopName;
     document.getElementById("businessTypeSetting").value = shopProfile.businessType;
     document.getElementById("shopNameSetting").value = shopProfile.shopName;
+    document.getElementById("syncUrlSetting").value = shopProfile.syncUrl;
+    document.getElementById("syncTokenSetting").value = shopProfile.syncToken;
+    if(!shopProfile.shopId){
+        if(!shopProfile.syncUrl || !shopProfile.syncToken){
+            openModal("shopSetupPopup");
+        }else{
+            openModal("shopLoginPopup");
+        }
+    }
 }
-function saveShopSetup(fromWelcome){
-    const nameId = fromWelcome ? "shopNameInput" : "shopNameSetting";
-    const newName = document.getElementById(nameId).value.trim() || "المتجر";
+function firstRunContinue(){
+    const url = document.getElementById("firstRunSyncUrl").value.trim();
+    const token = document.getElementById("firstRunSyncToken").value.trim();
+    if(!url || !token){
+        showMessage("لازم تعبّي رابط المزامنة والرمز السري", "warn");
+        return;
+    }
+    shopProfile.syncUrl = url;
+    shopProfile.syncToken = token;
+    saveShopProfile();
+    document.getElementById("syncUrlSetting").value = url;
+    document.getElementById("syncTokenSetting").value = token;
+    closeModal("shopSetupPopup");
+    openModal("shopLoginPopup");
+}
+function saveShopSetup(){
+    const newName = document.getElementById("shopNameSetting").value.trim() || "المتجر";
     const nameChanged = !!shopProfile.shopName && shopProfile.shopName !== newName;
     shopProfile.shopName = newName;
     shopProfile.businessType = FIXED_BUSINESS_TYPE;
     saveShopProfile();
     document.getElementById("shopNameSetting").value = shopProfile.shopName;
     document.getElementById("businessTypeSetting").value = shopProfile.businessType;
-    document.getElementById("shopNameInput").value = shopProfile.shopName;
-    document.getElementById("businessTypeSelect").value = shopProfile.businessType;
     applyBusinessType();
-    if(fromWelcome) closeModal("shopSetupPopup");
     if(nameChanged && syncConfigured()){
         showMessage("تم تغيير الاسم — بانتظار إعادة موافقة الإدارة", "warn");
         registerDeviceAndCheckStatus();
@@ -2050,7 +2082,6 @@ async function applyShopLogin_(account){
     shopProfile.businessType = FIXED_BUSINESS_TYPE;
     saveShopProfile();
     document.getElementById("shopNameSetting").value = shopProfile.shopName;
-    document.getElementById("shopNameInput").value = shopProfile.shopName;
     syncQueue = {};
     persistSyncQueue();
     deviceApprovalStatus = "approved";
@@ -2341,7 +2372,33 @@ function formatLastSyncAt(){
     return "آخر مزامنة: " + d.toLocaleString("ar");
 }
 
+function openPendingSyncPopup(){
+    renderPendingSyncList();
+    openModal("pendingSyncPopup");
+}
+function renderPendingSyncList(){
+    const box = document.getElementById("pendingSyncList");
+    if(!box) return;
+    const ids = Object.keys(syncQueue);
+    if(!ids.length){
+        box.innerHTML = '<div class="empty-state" style="padding:24px 10px"><h3>ولا مادة بالانتظار</h3><p>كل شي وصل للسحابة ✓</p></div>';
+        return;
+    }
+    box.innerHTML = ids.map(id => {
+        const entry = syncQueue[id];
+        const p = products.find(x => x.id === id);
+        const name = p ? (p["المادة"] || "بدون اسم") : (entry.op === "delete" ? "مادة محذوفة" : "مادة غير معروفة");
+        const opLabel = entry.op === "delete" ? "حذف" : "إضافة/تعديل";
+        return `<div class="dup-item">
+            <div class="dup-item-info">
+                <span class="name">${esc(name)}</span>
+                <span class="sub">${opLabel} — ${esc(new Date(entry.ts).toLocaleString("ar"))}</span>
+            </div>
+        </div>`;
+    }).join("");
+}
 function updateSyncStatusUI(state, message){
+    renderPendingSyncList();
     const btn = document.getElementById("syncStatusBtn");
     const text = document.getElementById("syncStatusText");
     if(!btn || !text) return;
