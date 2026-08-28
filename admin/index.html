@@ -927,7 +927,12 @@ async function deleteAdminDeviceRow(deviceId, deviceLabel){
     }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
 }
 
-const IS_DESKTOP_SERVER = (location.hostname === "localhost" || location.hostname === "127.0.0.1");
+/* تطبيقات Capacitor الأصلية (native) بتشتغل من أصل "localhost" هي
+   كمان — لازم نستثنيها صراحة، وإلا بتنحسب غلط "سيرفر سطح مكتب"
+   وبتتخطّى تنزيل الصور بالخلفية (cacheImagesInBackground) بالكامل،
+   يعني الصور بتختفي أوفلاين بينما الأسماء تضل ظاهرة (من اللقطة). */
+const IS_DESKTOP_SERVER = !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+    && (location.hostname === "localhost" || location.hostname === "127.0.0.1");
 
 async function refreshData(manual){
     if(!config || !config.apiUrl || !config.apiToken){
