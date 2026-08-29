@@ -627,8 +627,15 @@ function openShopAccountsModal(){
 function closeShopAccountsModal(){ document.getElementById("shopAccountsModal").classList.remove("open"); }
 function populateExistingShopSelect_(){
     const sel = document.getElementById("newAccountExistingShop");
+    // allShops لحاله مش كافي: محل ممكن يكون تسجيله بلائحة "الأجهزة
+    // المتصلة" انحذف (زر 🗑) بس مواده لسا موجودة — لازم يضل قابل
+    // للربط بحساب جديد وإلا مواده بتضل يتيمة ما حدا يقدر يوصلها.
+    const shopsById = {};
+    allShops.forEach(s => { shopsById[s.shopId] = s; });
+    allProducts.forEach(p => { if(!shopsById[p.shopId]) shopsById[p.shopId] = {shopId: p.shopId, shopName: p.shopName, businessType: p.businessType}; });
+    const shops = Object.values(shopsById);
     sel.innerHTML = '<option value="">— محل جديد كلياً —</option>' +
-        allShops.map(s => `<option value="${esc(s.shopId)}">${esc(s.shopName || s.shopId)}</option>`).join("");
+        shops.map(s => `<option value="${esc(s.shopId)}">${esc(s.shopName || s.shopId)}</option>`).join("");
 }
 function generateAccountPassword(){
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
