@@ -1,10 +1,19 @@
 // بدّل هذا الرقم (v1 -> v2 ...) كل ما تعدّل index.html تعديل مهم،
 // هيك المتصفح بيمسح النسخة القديمة المخزّنة ويجيب الجديدة.
-const CACHE = 'supermarket-v7';
+const CACHE = 'supermarket-v8';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  // كل ملف بمحاولة تخزين مستقلة — لو فشل واحد (نت بطيء بلحظة التثبيت
+  // مثلاً)، لازم الباقي (وأهمها index.html) يتخزّنوا برضه. c.addAll()
+  // القديمة كانت "الكل أو ولا شي": أي ملف وحد يفشل بيلغي التثبيت كامل
+  // ويضل التطبيق بلا أي تخزين مؤقت — وهيك أول ما ينقطع النت بتطلع
+  // شاشة فاضية تماماً بدل التطبيق.
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      Promise.all(ASSETS.map((url) => c.add(url).catch(() => {})))
+    )
+  );
   self.skipWaiting();
 });
 

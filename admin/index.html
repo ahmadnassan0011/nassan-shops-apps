@@ -307,6 +307,7 @@ tr.admin-marked-row:hover td{background:var(--primary-softer)}
     </header>
 
     <div class="offline-banner" id="offlineBanner" style="display:none"></div>
+    <div class="offline-banner" id="imageCacheBanner" style="display:none;background:var(--primary-soft);color:var(--primary-700);border-color:var(--primary-700)"></div>
 
     <div class="stats-row" id="statsRow"></div>
 
@@ -793,7 +794,7 @@ async function setDeviceStatus(shopId, status){
     }catch(e){ showToast("تعذّر الاتصال بالخادم", true); }
 }
 async function deleteShopDeviceRow(shopId, shopName){
-    if(!confirm(`حذف "${shopName || shopId}" نهائياً من لائحة الأجهزة المتصلة؟\n(هاد ما بيحذف مواده — بس بيشيله من هالقائمة. لو رجع زامن، بيسجّل من جديد كـ"بانتظار الموافقة").`)) return;
+    if(!confirm(`⚠️ حذف "${shopName || shopId}" نهائياً من لائحة الأجهزة المتصلة؟\nرح تنحذف معه كل مواده نهائياً من غوغل شيت (والصور من Drive). لا يمكن التراجع.\nلو رجع زامن بعدين، بيسجّل من جديد كـ"بانتظار الموافقة".`)) return;
     if(!config || !config.apiUrl || !config.apiToken) return;
     try{
         const sep = config.apiUrl.includes("?") ? "&" : "?";
@@ -801,7 +802,7 @@ async function deleteShopDeviceRow(shopId, shopName){
         const res = await fetch(url);
         const json = await res.json();
         if(json && json.ok){
-            showToast("تم حذف الجهاز من اللائحة ✓");
+            showToast("تم حذف الجهاز" + (json.deletedProducts ? " و" + json.deletedProducts + " مادة" : "") + " ✓");
             await refreshData();
             renderDevicesModal();
         }else{
@@ -1146,6 +1147,16 @@ async function fetchAndCacheImage_(fileId){
 }
 /* بتنزّل صور المنتجات بالخلفية (بلا ما توقف الواجهة) — أول مرة بتاخد وقت
    حسب عدد الصور، والمرات الجاية بتكون أسرع بكثير (بس الجديد/المتغيّر). */
+function updateImageCacheBanner_(done, total){
+    const el = document.getElementById("imageCacheBanner");
+    if(!el) return;
+    if(!total || done >= total){
+        el.style.display = "none";
+        return;
+    }
+    el.style.display = "block";
+    el.textContent = `⏳ جارِ تخزين صور المواد للعمل بلا إنترنت (${done}/${total}) — خلّي الوايفاي مفتوح لحد ما تخلص`;
+}
 async function cacheImagesInBackground(){
     const ids = new Set();
     allProducts.forEach(p => {
@@ -1154,12 +1165,17 @@ async function cacheImagesInBackground(){
     });
     const list = Array.from(ids);
     let idx = 0;
+    let done = 0;
+    updateImageCacheBanner_(0, list.length);
     async function worker(){
         while(idx < list.length){
             await fetchAndCacheImage_(list[idx++]);
+            done++;
+            updateImageCacheBanner_(done, list.length);
         }
     }
     await Promise.all([worker(), worker(), worker()]); // 3 تنزيلات بالتوازي
+    updateImageCacheBanner_(list.length, list.length);
 }
 async function hydrateProductsWithCachedImages_(products){
     const out = [];
